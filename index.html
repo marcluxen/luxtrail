@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>luxtrail</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a2e22">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="title-row">
+      <h1>lux<span>trail</span></h1>
+      <select id="trip-select" title="Current trip"></select>
+    </div>
+    <div class="toolbar">
+      <button class="icon-btn" id="btn-load" title="Load GPX">📂</button>
+      <button class="icon-btn" id="btn-add-poi" title="Add POI at map center">📍</button>
+      <button class="icon-btn" id="btn-elevation" title="Elevation profile">⛰</button>
+      <button class="icon-btn" id="btn-list" title="Tracks & Points">☰</button>
+      <button class="icon-btn" id="btn-settings" title="Map sources & offline">⚙</button>
+    </div>
+  </header>
+
+  <div id="map"></div>
+
+  <div id="elevation-panel" class="sheet hidden">
+    <div class="sheet-header">
+      <span id="elevation-title">Elevation</span>
+      <button class="icon-btn" id="btn-close-elevation">✕</button>
+    </div>
+    <div id="elevation-chart"></div>
+    <div id="elevation-stats" class="stats-row"></div>
+  </div>
+
+  <div id="status-bar">
+    <div class="card" id="gps-status">GPS: off</div>
+    <div class="card hidden" id="off-track-warning">Off track</div>
+    <button class="fab" id="btn-locate">Locate me</button>
+  </div>
+
+  <div id="list-panel">
+    <div class="panel-header">
+      <h2>Tracks & Points</h2>
+      <div class="toolbar">
+        <button class="icon-btn" id="btn-export-gpx" title="Export trip as GPX">⬆</button>
+        <button class="icon-btn" id="btn-close-list">✕</button>
+      </div>
+    </div>
+    <div id="list-items"></div>
+  </div>
+
+  <div id="settings-panel">
+    <div class="panel-header">
+      <h2>Map sources & offline</h2>
+      <button class="icon-btn" id="btn-close-settings">✕</button>
+    </div>
+    <div class="settings-body">
+      <label>Active source</label>
+      <select id="source-select"></select>
+
+      <div class="divider"></div>
+      <h3>Add custom source</h3>
+      <label for="src-name">Name</label>
+      <input type="text" id="src-name" placeholder="MapTiler Outdoor">
+      <label for="src-url">Tile URL template</label>
+      <input type="text" id="src-url" placeholder="https://api.maptiler.com/maps/outdoor/{z}/{x}/{y}.png?key={key}">
+      <label for="src-key">API key (optional)</label>
+      <input type="text" id="src-key" placeholder="Leave blank if not needed">
+      <label for="src-maxzoom">Max zoom</label>
+      <input type="number" id="src-maxzoom" value="18" min="1" max="22">
+      <button class="btn primary" id="btn-add-source">Add source</button>
+
+      <div class="divider"></div>
+      <h3>Download area for offline</h3>
+      <label for="dl-minzoom">Min zoom</label>
+      <input type="number" id="dl-minzoom" value="12" min="1" max="20">
+      <label for="dl-maxzoom">Max zoom</label>
+      <input type="number" id="dl-maxzoom" value="16" min="1" max="20">
+      <button class="btn primary" id="btn-download-area">Download current view</button>
+      <div id="download-progress" class="hint"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+
+  <input type="file" id="file-input" accept=".gpx" multiple>
+  <input type="file" id="photo-input" accept="image/*" multiple>
+</div>
+
+<dialog id="poi-dialog">
+  <div class="dialog-body">
+    <h2>New point of interest</h2>
+    <label for="poi-name">Name</label>
+    <input type="text" id="poi-name" placeholder="Water source, viewpoint, junction...">
+    <label for="poi-category">Category</label>
+    <select id="poi-category">
+      <option value="water">Water</option>
+      <option value="viewpoint">Viewpoint</option>
+      <option value="junction">Junction</option>
+      <option value="hazard">Hazard</option>
+      <option value="camp">Campsite</option>
+      <option value="other">Other</option>
+    </select>
+    <label for="poi-notes">Notes</label>
+    <textarea id="poi-notes" rows="2" placeholder="Optional"></textarea>
+    <label>Photos</label>
+    <button type="button" class="btn" id="btn-attach-photos">Attach photos</button>
+    <div id="poi-photo-preview" class="photo-preview"></div>
+    <div class="dialog-actions">
+      <button class="btn" id="poi-cancel">Cancel</button>
+      <button class="btn primary" id="poi-save">Save</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="poi-view-dialog">
+  <div class="dialog-body">
+    <h2 id="poi-view-name"></h2>
+    <div id="poi-view-meta" class="hint"></div>
+    <div id="poi-view-photos" class="photo-preview"></div>
+    <p id="poi-view-notes"></p>
+    <div class="dialog-actions">
+      <button class="btn danger" id="poi-delete">Delete</button>
+      <button class="btn primary" id="poi-view-close">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="prompt-dialog">
+  <div class="dialog-body">
+    <h2 id="prompt-title">Input</h2>
+    <input type="text" id="prompt-input">
+    <div class="dialog-actions">
+      <button class="btn" id="prompt-cancel">Cancel</button>
+      <button class="btn primary" id="prompt-ok">OK</button>
+    </div>
+  </div>
+</dialog>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script type="module" src="src/app.js"></script>
+</body>
+</html>
