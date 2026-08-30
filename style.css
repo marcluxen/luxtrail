@@ -231,6 +231,18 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
 .hint, .settings-body .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
 .settings-body .btn { width: 100%; margin-top: 10px; }
 
+.download-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  gap: 8px;
+}
+.download-row .info { font-size: 13px; }
+.download-row .meta { font-size: 11px; color: var(--text-dim); }
+.download-row button { flex-shrink: 0; font-size: 11px; padding: 4px 8px; }
+
 .list-item {
   display: flex;
   justify-content: space-between;

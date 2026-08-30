@@ -1,4 +1,4 @@
-const APP_CACHE = 'luxtrail-app-v17';
+const APP_CACHE = 'luxtrail-app-v18';
 const TILE_CACHE = 'luxtrail-tiles-v1';
 
 const APP_SHELL = [
@@ -92,20 +92,29 @@ self.addEventListener('message', (event) => {
     const urls = event.data.urls || [];
     caches.open(TILE_CACHE).then(async (cache) => {
       let done = 0;
+      let bytes = 0;
       for (const u of urls) {
         try {
           const existing = await cache.match(u);
-          if (!existing) {
+          if (existing) {
+            const len = existing.headers.get('content-length');
+            bytes += len ? parseInt(len, 10) : 0;
+          } else {
             const res = await fetch(u);
-            if (res.ok) await cache.put(u, res);
+            if (res.ok) {
+              const clone = res.clone();
+              await cache.put(u, res);
+              const len = clone.headers.get('content-length');
+              bytes += len ? parseInt(len, 10) : 0;
+            }
           }
         } catch (e) {
           // skip failed tile, keep going
         }
         done++;
-        event.source.postMessage({ type: 'PRECACHE_PROGRESS', done, total: urls.length });
+        event.source.postMessage({ type: 'PRECACHE_PROGRESS', done, total: urls.length, bytes });
       }
-      event.source.postMessage({ type: 'PRECACHE_DONE', total: urls.length });
+      event.source.postMessage({ type: 'PRECACHE_DONE', total: urls.length, bytes });
     });
   }
 });

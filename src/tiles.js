@@ -21,6 +21,11 @@ export const BUILTIN_SOURCES = [
   },
 ];
 
+// Must match TILE_CACHE in sw.js exactly - the Cache Storage API is shared
+// between the page and its service worker on the same origin, so this can
+// be read/cleared directly without messaging the worker.
+const TILE_CACHE_NAME = 'luxtrail-tiles-v1';
+
 export async function ensureBuiltinSources() {
   const existing = await db.all('tileSources');
   if (existing.length === 0) {
@@ -95,7 +100,7 @@ export function tilesForBounds(bounds, minZoom, maxZoom) {
   return urls;
 }
 
-export async function downloadArea(source, bounds, minZoom, maxZoom, onProgress) {
+export async function downloadArea(source, bounds, minZoom, maxZoom, label, onProgress) {
   // Ask the browser not to evict this app's storage under space pressure.
   // Not guaranteed - the browser decides - but this is the one real lever
   // available to reduce the risk of a downloaded area silently disappearing
@@ -112,17 +117,64 @@ export async function downloadArea(source, bounds, minZoom, maxZoom, onProgress)
   const reg = await navigator.serviceWorker.ready;
   if (!reg.active) throw new Error('Service worker not active');
 
-  return new Promise((resolve, reject) => {
+  const result = await new Promise((resolve, reject) => {
     function onMessage(event) {
       const msg = event.data;
       if (msg.type === 'PRECACHE_PROGRESS') {
-        onProgress && onProgress(msg.done, msg.total);
+        onProgress && onProgress(msg.done, msg.total, msg.bytes);
       } else if (msg.type === 'PRECACHE_DONE') {
         navigator.serviceWorker.removeEventListener('message', onMessage);
-        resolve({ total: msg.total, persisted });
+        resolve({ total: msg.total, bytes: msg.bytes });
       }
     }
     navigator.serviceWorker.addEventListener('message', onMessage);
     reg.active.postMessage({ type: 'PRECACHE_TILES', urls });
   });
+
+  // Record this as its own named, individually deletable download - not
+  // just tiles dumped anonymously into one shared cache.
+  const record = {
+    id: newId(),
+    label: label || `${source.name} — ${new Date().toLocaleDateString()}`,
+    sourceName: source.name,
+    minZoom, maxZoom,
+    tileCount: urls.length,
+    bytes: result.bytes,
+    tileUrls: urls,
+    createdAt: Date.now(),
+  };
+  await db.put('mapDownloads', record);
+
+  return { total: result.total, bytes: result.bytes, persisted, downloadId: record.id };
+}
+
+export async function listMapDownloads() {
+  const all = await db.all('mapDownloads');
+  return all.sort((a, b) => b.createdAt - a.createdAt);
+}
+
+// Deletes one named download. Tiles that are ALSO part of another retained
+// download (overlapping areas) are kept - only tiles unique to this
+// download are actually removed from the cache.
+export async function deleteMapDownload(downloadId) {
+  const target = await db.get('mapDownloads', downloadId);
+  if (!target) return 0;
+
+  const others = (await db.all('mapDownloads')).filter((d) => d.id !== downloadId);
+  const stillNeeded = new Set();
+  for (const d of others) for (const url of d.tileUrls) stillNeeded.add(url);
+
+  let removed = 0;
+  if ('caches' in window) {
+    const cache = await caches.open(TILE_CACHE_NAME);
+    for (const url of target.tileUrls) {
+      if (!stillNeeded.has(url)) {
+        const ok = await cache.delete(url);
+        if (ok) removed++;
+      }
+    }
+  }
+
+  await db.delete('mapDownloads', downloadId);
+  return removed;
 }

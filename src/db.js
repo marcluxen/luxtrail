@@ -1,5 +1,5 @@
 const DB_NAME = 'luxtrail';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbPromise = null;
 
@@ -29,6 +29,9 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains('mapDownloads')) {
+        db.createObjectStore('mapDownloads', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);

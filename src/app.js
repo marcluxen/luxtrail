@@ -92,6 +92,43 @@ async function init() {
   wireUi();
 }
 
+function formatBytes(bytes) {
+  if (!bytes) return '0 MB';
+  const mb = bytes / (1024 * 1024);
+  return mb < 1000 ? `${mb.toFixed(1)} MB` : `${(mb / 1024).toFixed(2)} GB`;
+}
+
+async function renderDownloadsList() {
+  const container = document.getElementById('downloads-list');
+  const downloads = await tilesmod.listMapDownloads();
+
+  if (!downloads.length) {
+    container.innerHTML = '<div class="hint">No maps downloaded yet.</div>';
+    return;
+  }
+
+  container.innerHTML = '';
+  for (const d of downloads) {
+    const row = document.createElement('div');
+    row.className = 'download-row';
+    const info = document.createElement('div');
+    info.className = 'info';
+    info.innerHTML = `${d.label}<div class="meta">${d.sourceName} · z${d.minZoom}-${d.maxZoom} · ${formatBytes(d.bytes)} · ${new Date(d.createdAt).toLocaleDateString()}</div>`;
+    const delBtn = document.createElement('button');
+    delBtn.className = 'btn';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      if (!confirm(`Delete "${d.label}"? This removes its tiles unless another download still needs them.`)) return;
+      await tilesmod.deleteMapDownload(d.id);
+      renderDownloadsList();
+      toast('Download removed');
+    });
+    row.appendChild(info);
+    row.appendChild(delBtn);
+    container.appendChild(row);
+  }
+}
+
 function setPlacingMode(on) {
   if (on) setMeasuringModeOff();
   state.placingPoi = on;
@@ -533,7 +570,7 @@ function wireUi() {
     renderList();
   });
 
-  document.getElementById('btn-settings').addEventListener('click', () => togglePanel('settings-panel'));
+  document.getElementById('btn-settings').addEventListener('click', () => { togglePanel('settings-panel'); renderDownloadsList(); });
   document.getElementById('btn-close-settings').addEventListener('click', () => togglePanel('settings-panel', false));
 
   document.getElementById('btn-elevation').addEventListener('click', () => {
@@ -686,17 +723,20 @@ function wireUi() {
     const source = sources.find((s) => s.id === document.getElementById('source-select').value);
     const minZoom = parseInt(document.getElementById('dl-minzoom').value, 10);
     const maxZoom = parseInt(document.getElementById('dl-maxzoom').value, 10);
+    const label = await promptDialog('Name this download (e.g. "Norway day 1-3")', `${source.name} area`);
+    if (!label) return;
     const progressEl = document.getElementById('download-progress');
     progressEl.textContent = 'Starting…';
     try {
-      const result = await tilesmod.downloadArea(source, state.map.getBounds(), minZoom, maxZoom, (done, tot) => {
+      const result = await tilesmod.downloadArea(source, state.map.getBounds(), minZoom, maxZoom, label, (done, tot) => {
         progressEl.textContent = `Caching tiles: ${done} / ${tot}`;
       });
       const persistNote = result.persisted
         ? 'Storage marked persistent - less likely to be cleared under low space.'
         : "Couldn't get persistent storage from the browser - keep some free space on your phone before the trip.";
-      progressEl.textContent = `Done — ${result.total} tiles cached for offline use. ${persistNote}`;
+      progressEl.textContent = `Done — ${result.total} tiles, ${formatBytes(result.bytes)} cached. ${persistNote}`;
       toast('Area saved for offline use');
+      renderDownloadsList();
     } catch (err) {
       progressEl.textContent = 'Failed: ' + err.message;
     }
