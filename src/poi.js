@@ -43,9 +43,11 @@ export async function addPhotosToPoi(poi, photoFiles) {
   return poi;
 }
 
-// A page you glance at doesn't need 1200px - 1000 is plenty and noticeably
-// smaller. Original photo stays untouched on the phone regardless.
-function compressImage(file, maxWidth = 1000, quality = 0.78) {
+// A page you glance at doesn't need more than this - 800px is sharp at
+// full-screen on a phone and only mildly softer stretched wide on a big
+// desktop monitor, at a fraction of the size. Original photo stays
+// untouched on the phone regardless.
+function compressImage(file, maxWidth = 800, quality = 0.78) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();
