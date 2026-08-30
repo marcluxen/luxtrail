@@ -73,7 +73,6 @@ for (const p of DATA.pois) {
   let html = '<h2>' + p.name + '</h2><div class="cat">' + p.category + '</div>';
   if (p.notes) html += '<div class="notes">' + p.notes + '</div>';
   if (p.photoFiles && p.photoFiles.length) {
-  if (p.photoFiles && p.photoFiles.length) {
     html += '<div class="photos">' + p.photoFiles.map(f => {
       const base = f.split('/').pop();
       return '<div style="text-align:center"><img src="' + f + '" onclick="openLightbox(this.src)"><div style="font-size:9px;opacity:.6;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + base + '</div></div>';
