@@ -8,7 +8,7 @@ import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
-import { buildTripZip, downloadZipFile } from './export.js';
+import { buildTripZipParts, downloadZipFile } from './export.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
 
 const PROXIMITY_ALERT_M = 30;
@@ -444,11 +444,13 @@ function wireUi() {
     if (!state.tracks.length && !state.pois.length && !state.waypoints.length) { toast('Nothing to export'); return; }
     toast('Building export…');
     try {
-      const zipBytes = await buildTripZip(state.trip, state.tracks, state.waypoints, state.pois, (done, total) => {
-        if (total) toast(`Packing photos: ${done} / ${total}`);
+      const parts = await buildTripZipParts(state.trip, state.tracks, state.waypoints, state.pois, (done, total, part, totalParts) => {
+        if (total) toast(totalParts > 1 ? `Part ${part}/${totalParts}: photo ${done}/${total}` : `Packing photos: ${done}/${total}`);
       });
-      downloadZipFile(state.trip.name + '-viewer', zipBytes);
-      toast('Saved — unzip and open index.html at home, no app needed');
+      for (const p of parts) downloadZipFile(p.filename, p.bytes);
+      toast(parts.length > 1
+        ? `Saved as ${parts.length} files — unzip each and open index.html`
+        : 'Saved — unzip and open index.html at home, no app needed');
     } catch (err) {
       toast('Export failed: ' + err.message);
     }
