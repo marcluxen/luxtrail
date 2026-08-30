@@ -1,4 +1,4 @@
-const APP_CACHE = 'luxtrail-app-v9';
+const APP_CACHE = 'luxtrail-app-v10';
 const TILE_CACHE = 'luxtrail-tiles-v1';
 
 const APP_SHELL = [
@@ -22,6 +22,7 @@ const APP_SHELL = [
   './src/ui.js',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+  'https://unpkg.com/fflate@0.8.3/esm/browser.js',
 ];
 
 self.addEventListener('install', (event) => {

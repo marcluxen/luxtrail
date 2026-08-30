@@ -8,7 +8,7 @@ import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
-import { buildTripHtml, downloadHtmlFile } from './export.js';
+import { buildTripZip, downloadZipFile } from './export.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
 
 const PROXIMITY_ALERT_M = 30;
@@ -444,9 +444,11 @@ function wireUi() {
     if (!state.tracks.length && !state.pois.length && !state.waypoints.length) { toast('Nothing to export'); return; }
     toast('Building export…');
     try {
-      const html = await buildTripHtml(state.trip, state.tracks, state.waypoints, state.pois);
-      downloadHtmlFile(state.trip.name + '-viewer', html);
-      toast('Saved — open the file at home, no app needed');
+      const zipBytes = await buildTripZip(state.trip, state.tracks, state.waypoints, state.pois, (done, total) => {
+        if (total) toast(`Packing photos: ${done} / ${total}`);
+      });
+      downloadZipFile(state.trip.name + '-viewer', zipBytes);
+      toast('Saved — unzip and open index.html at home, no app needed');
     } catch (err) {
       toast('Export failed: ' + err.message);
     }

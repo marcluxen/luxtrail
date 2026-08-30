@@ -1,45 +1,31 @@
-// Builds one self-contained HTML file: the route on a map, plus every POI
-// with its notes and photos embedded directly (as data URLs) so it opens
-// and works in any browser at home - no app, no server, no separate files.
+// Builds a zip export: real photo files + a lightweight standalone HTML
+// viewer that references them by relative path (same pattern KMZ uses -
+// Gaia GPS, Google Earth - so no base64 bloat and no giant in-memory
+// string, even with hundreds of photos). Unzip anywhere, open index.html,
+// works in any browser, no app or server needed.
 
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = reject;
-    reader.readAsDataURL(blob);
-  });
-}
+import { zipSync } from 'https://unpkg.com/fflate@0.8.3/esm/browser.js';
 
 function esc(s) {
   return String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
-export async function buildTripHtml(trip, tracks, waypoints, pois) {
-  const poisWithPhotos = [];
-  for (const poi of pois) {
-    const photoUrls = [];
-    for (const blob of poi.photos || []) {
-      photoUrls.push(await blobToDataUrl(blob));
-    }
-    poisWithPhotos.push({ ...poi, photoUrls });
-  }
+function blobToUint8Array(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(new Uint8Array(reader.result));
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(blob);
+  });
+}
 
-  const data = {
-    tripName: trip.name,
-    tracks: tracks.map((t) => ({ name: t.name, points: t.points.map((p) => [p.lat, p.lon]) })),
-    waypoints: waypoints.map((w) => ({ name: w.name, lat: w.lat, lon: w.lon })),
-    pois: poisWithPhotos.map((p) => ({
-      name: p.name, category: p.category, notes: p.notes, lat: p.lat, lon: p.lon, photos: p.photoUrls,
-    })),
-  };
-
+function buildViewerHtml(data) {
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(trip.name)} — luxtrail export</title>
+<title>${esc(data.tripName)} — luxtrail export</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   html, body { margin: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
@@ -86,8 +72,8 @@ for (const p of DATA.pois) {
   const color = CATEGORY_COLORS[p.category] || CATEGORY_COLORS.other;
   let html = '<h2>' + p.name + '</h2><div class="cat">' + p.category + '</div>';
   if (p.notes) html += '<div class="notes">' + p.notes + '</div>';
-  if (p.photos && p.photos.length) {
-    html += '<div class="photos">' + p.photos.map(src => '<img src="' + src + '" onclick="openLightbox(this.src)">').join('') + '</div>';
+  if (p.photoFiles && p.photoFiles.length) {
+    html += '<div class="photos">' + p.photoFiles.map(f => '<img src="' + f + '" onclick="openLightbox(this.src)">').join('') + '</div>';
   }
   L.circleMarker([p.lat, p.lon], { radius: 8, color: '#eef0ea', weight: 2, fillColor: color, fillOpacity: 1 })
     .addTo(map).bindPopup(html, { maxWidth: 280 });
@@ -106,12 +92,45 @@ function openLightbox(src) {
 </html>`;
 }
 
-export function downloadHtmlFile(filename, htmlString) {
-  const blob = new Blob([htmlString], { type: 'text/html' });
+// Builds the zip in memory as real files (photos stay as their native JPEG
+// bytes, stored uncompressed since JPEGs don't compress further anyway) -
+// no base64 string, no size inflation, no giant single string to hold.
+export async function buildTripZip(trip, tracks, waypoints, pois, onProgress) {
+  const files = {};
+  const data = {
+    tripName: trip.name,
+    tracks: tracks.map((t) => ({ name: t.name, points: t.points.map((p) => [p.lat, p.lon]) })),
+    waypoints: waypoints.map((w) => ({ name: w.name, lat: w.lat, lon: w.lon })),
+    pois: [],
+  };
+
+  let photoIndex = 0;
+  let done = 0;
+  const total = pois.reduce((sum, p) => sum + (p.photos ? p.photos.length : 0), 0);
+
+  for (const poi of pois) {
+    const photoFiles = [];
+    for (const blob of poi.photos || []) {
+      const name = `photos/img${String(photoIndex++).padStart(4, '0')}.jpg`;
+      files[name] = [await blobToUint8Array(blob), { level: 0 }]; // level 0 = store, no compression needed for jpegs
+      photoFiles.push(name);
+      done++;
+      onProgress && onProgress(done, total);
+    }
+    data.pois.push({ name: poi.name, category: poi.category, notes: poi.notes, lat: poi.lat, lon: poi.lon, photoFiles });
+  }
+
+  files['index.html'] = new TextEncoder().encode(buildViewerHtml(data));
+
+  return zipSync(files, { level: 0 });
+}
+
+export function downloadZipFile(filename, uint8Array) {
+  const blob = new Blob([uint8Array], { type: 'application/zip' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = filename.endsWith('.html') ? filename : `${filename}.html`;
+  a.download = filename.endsWith('.zip') ? filename : `${filename}.zip`;
   document.body.appendChild(a);
   a.click();
   a.remove();
