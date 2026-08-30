@@ -49,6 +49,8 @@ async function init() {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 
+  setupInstallPrompt();
+
   await tilesmod.ensureBuiltinSources();
 
   state.trips = await db.all('trips');
@@ -127,6 +129,42 @@ async function renderDownloadsList() {
     row.appendChild(delBtn);
     container.appendChild(row);
   }
+}
+
+let deferredInstallPrompt = null;
+
+function setupInstallPrompt() {
+  const btn = document.getElementById('btn-install');
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+  if (isStandalone) return; // already installed, nothing to offer
+
+  const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    btn.classList.remove('hidden');
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    btn.classList.add('hidden');
+  });
+
+  if (isIos) btn.classList.remove('hidden'); // no install prompt event on iOS - offer instructions instead
+
+  btn.addEventListener('click', async () => {
+    if (deferredInstallPrompt) {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      deferredInstallPrompt = null;
+      if (choice.outcome === 'accepted') btn.classList.add('hidden');
+    } else if (isIos) {
+      toast('Tap the Share icon below, then "Add to Home Screen"', 5000);
+    } else {
+      toast('Use your browser menu to install or add to home screen');
+    }
+  });
 }
 
 function setPlacingMode(on) {
