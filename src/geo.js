@@ -51,6 +51,22 @@ export function distanceToTrack(p, points) {
   return min;
 }
 
+// Searches only segments near a known index instead of the whole track -
+// O(window) instead of O(n), which matters once a track has tens of
+// thousands of points (a multi-day route) and this runs on every GPS fix.
+// step > 1 turns this into a sparse sample pass (used once to bootstrap a
+// starting position, never per-fix).
+export function nearestSegmentInRange(p, points, startIdx, endIdx, step = 1) {
+  const s = Math.max(0, startIdx);
+  const e = Math.min(points.length - 2, endIdx);
+  let min = Infinity, idx = s;
+  for (let i = s; i <= e; i += step) {
+    const d = distanceToSegment(p, points[i], points[i + 1]);
+    if (d < min) { min = d; idx = i; }
+  }
+  return { distance: min, index: idx };
+}
+
 export function trackStats(points) {
   let distance = 0, gain = 0, loss = 0;
   const cumulative = [0];

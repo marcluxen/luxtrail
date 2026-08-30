@@ -1,6 +1,10 @@
-import { haversine, bearing, distanceToTrack } from './geo.js';
+import { haversine, bearing, nearestSegmentInRange } from './geo.js';
 
 const OFF_TRACK_THRESHOLD_M = 50;
+const SEARCH_WINDOW = 40; // segments each side of the last known position
+const RELOCATE_THRESHOLD_M = 300; // widen the window if the match is this far off
+const WINDOW_GROWTH = [1, 5, 25]; // multiples of SEARCH_WINDOW tried, widest wins if none land inside RELOCATE_THRESHOLD_M
+const COARSE_STEP = 25; // sparse sample used once to bootstrap the very first fix on a track - never a full per-point scan, and never repeated
 
 export class GpsTracker {
   constructor({ onPosition, onError }) {
@@ -8,11 +12,13 @@ export class GpsTracker {
     this.onPosition = onPosition;
     this.onError = onError;
     this.activeTrackPoints = null;
+    this.lastSegmentIndex = null;
     this.points = []; // combined waypoints + pois: {id, name, lat, lon}
   }
 
   setActiveTrack(points) {
     this.activeTrackPoints = points || null;
+    this.lastSegmentIndex = null; // new track - unknown where we are on it
   }
 
   setPoints(points) {
@@ -38,6 +44,28 @@ export class GpsTracker {
     }
   }
 
+  _locateOnTrack(p) {
+    const points = this.activeTrackPoints;
+    const maxIndex = points.length - 2;
+
+    if (this.lastSegmentIndex == null) {
+      // First fix on this track: one sparse pass to find roughly where we
+      // are, then refine locally. Runs once per track, never per fix.
+      const coarse = nearestSegmentInRange(p, points, 0, maxIndex, COARSE_STEP);
+      return nearestSegmentInRange(p, points, coarse.index - SEARCH_WINDOW, coarse.index + SEARCH_WINDOW);
+    }
+
+    // Anchored to the last known position - never re-scans the whole
+    // track, just widens the local window a few steps if needed.
+    let best = null;
+    for (const mult of WINDOW_GROWTH) {
+      const w = SEARCH_WINDOW * mult;
+      best = nearestSegmentInRange(p, points, this.lastSegmentIndex - w, this.lastSegmentIndex + w);
+      if (best.distance <= RELOCATE_THRESHOLD_M) return best;
+    }
+    return best; // widest local window tried - accept it rather than ever scanning the full track
+  }
+
   _handlePosition(pos) {
     const lat = pos.coords.latitude;
     const lon = pos.coords.longitude;
@@ -45,7 +73,9 @@ export class GpsTracker {
 
     let offTrackMeters = null;
     if (this.activeTrackPoints && this.activeTrackPoints.length > 1) {
-      offTrackMeters = distanceToTrack({ lat, lon }, this.activeTrackPoints);
+      const result = this._locateOnTrack({ lat, lon });
+      offTrackMeters = result.distance;
+      this.lastSegmentIndex = result.index;
     }
 
     let nextInfo = null;
