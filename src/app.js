@@ -298,13 +298,13 @@ function handlePosition(info) {
   }
 
   if (state.recorder.recording) {
-    state.recorder.addFix(info);
-    if (state.recorder.points.length > 1) {
-      const latlngs = state.recorder.points.map((p) => [p.lat, p.lon]);
+    const newPoint = state.recorder.addFix(info);
+    if (newPoint) {
+      const latlng = [newPoint.lat, newPoint.lon];
       if (!state.recordingLine) {
-        state.recordingLine = L.polyline(latlngs, { color: '#c65b4a', weight: 4, dashArray: '6 6' }).addTo(state.map);
+        state.recordingLine = L.polyline([latlng], { color: '#c65b4a', weight: 4, dashArray: '6 6' }).addTo(state.map);
       } else {
-        state.recordingLine.setLatLngs(latlngs);
+        state.recordingLine.addLatLng(latlng);
       }
     }
   }
