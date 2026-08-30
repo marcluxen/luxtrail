@@ -96,6 +96,15 @@ export function tilesForBounds(bounds, minZoom, maxZoom) {
 }
 
 export async function downloadArea(source, bounds, minZoom, maxZoom, onProgress) {
+  // Ask the browser not to evict this app's storage under space pressure.
+  // Not guaranteed - the browser decides - but this is the one real lever
+  // available to reduce the risk of a downloaded area silently disappearing
+  // before a trip.
+  let persisted = false;
+  if (navigator.storage && navigator.storage.persist) {
+    try { persisted = await navigator.storage.persist(); } catch (e) { /* not supported, continue anyway */ }
+  }
+
   const tiles = tilesForBounds(bounds, minZoom, maxZoom);
   const urls = tiles.map((t) => resolveTileUrl(source, t.z, t.x, t.y));
 
@@ -110,7 +119,7 @@ export async function downloadArea(source, bounds, minZoom, maxZoom, onProgress)
         onProgress && onProgress(msg.done, msg.total);
       } else if (msg.type === 'PRECACHE_DONE') {
         navigator.serviceWorker.removeEventListener('message', onMessage);
-        resolve(msg.total);
+        resolve({ total: msg.total, persisted });
       }
     }
     navigator.serviceWorker.addEventListener('message', onMessage);

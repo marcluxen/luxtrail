@@ -689,10 +689,13 @@ function wireUi() {
     const progressEl = document.getElementById('download-progress');
     progressEl.textContent = 'Starting…';
     try {
-      const total = await tilesmod.downloadArea(source, state.map.getBounds(), minZoom, maxZoom, (done, tot) => {
+      const result = await tilesmod.downloadArea(source, state.map.getBounds(), minZoom, maxZoom, (done, tot) => {
         progressEl.textContent = `Caching tiles: ${done} / ${tot}`;
       });
-      progressEl.textContent = `Done — ${total} tiles cached for offline use.`;
+      const persistNote = result.persisted
+        ? 'Storage marked persistent - less likely to be cleared under low space.'
+        : "Couldn't get persistent storage from the browser - keep some free space on your phone before the trip.";
+      progressEl.textContent = `Done — ${result.total} tiles cached for offline use. ${persistNote}`;
       toast('Area saved for offline use');
     } catch (err) {
       progressEl.textContent = 'Failed: ' + err.message;
