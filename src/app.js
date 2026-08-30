@@ -23,6 +23,7 @@ const state = {
   layerRef: {},
   liveRef: {},
   groups: {},
+  trackLayers: new Map(),
   gps: null,
   gpsOn: false,
   followMode: true,
@@ -89,6 +90,9 @@ function setPlacingMode(on) {
 async function loadTripData() {
   const tripId = state.trip.id;
   state.tracks = await db.byIndex('tracks', 'tripId', tripId);
+  for (const t of state.tracks) {
+    t.stats = t.points.length > 1 ? computeProfile(t.points) : null;
+  }
   state.waypoints = await db.byIndex('waypoints', 'tripId', tripId);
   state.pois = await poimod.poisForTrip(tripId);
   state.activeTrack = state.tracks[0] || null;
@@ -115,12 +119,12 @@ async function loadTripData() {
 function setActiveTrack(track) {
   state.activeTrack = track;
   state.gps.setActiveTrack(track ? track.points : null);
-  renderMapLayers();
+  mapmod.setActiveTrackStyle(state.trackLayers, track ? track.id : null);
   updateElevationPanel();
 }
 
 function renderMapLayers() {
-  mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, setActiveTrack);
+  state.trackLayers = mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, setActiveTrack);
   mapmod.drawWaypoints(state.map, state.groups.waypoints, state.waypoints);
   mapmod.drawPois(state.map, state.groups.pois, state.pois, openPoiView);
 }
@@ -148,8 +152,7 @@ function renderList() {
   }
 
   for (const t of tracks) {
-    const stats = t.points.length > 1 ? computeProfile(t.points) : null;
-    const meta = stats ? formatDistance(stats.stats.distance) : `${t.points.length} pts`;
+    const meta = t.stats ? formatDistance(t.stats.stats.distance) : `${t.points.length} pts`;
     container.appendChild(listItem({
       title: t.name,
       meta,
@@ -205,7 +208,7 @@ function updateElevationPanel() {
     panel.classList.add('hidden');
     return;
   }
-  const profile = computeProfile(track.points);
+  const profile = track.stats;
   document.getElementById('elevation-title').textContent = track.name;
   const chartEl = document.getElementById('elevation-chart');
   const statsEl = document.getElementById('elevation-stats');

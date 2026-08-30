@@ -29,10 +29,13 @@ export function setTileLayer(map, currentLayerRef, source) {
   currentLayerRef.source = source;
 }
 
-// Draws every track; the active one is highlighted, others dimmed. Clicking a
-// dimmed track calls onSelect(track) so it becomes active.
+// Draws every track once (data actually changed - a trip load, or a track
+// added/removed). Returns a Map of id -> layer so the active track can be
+// switched later with a style change instead of rebuilding every polyline,
+// which matters once a track has tens of thousands of points.
 export function drawTracks(map, group, tracks, activeTrackId, onSelect) {
   group.clearLayers();
+  const layers = new Map();
   for (const t of tracks) {
     if (!t.points || t.points.length < 2) continue;
     const isActive = t.id === activeTrackId;
@@ -42,8 +45,23 @@ export function drawTracks(map, group, tracks, activeTrackId, onSelect) {
       weight: isActive ? 5 : 3,
       opacity: isActive ? 0.95 : 0.55,
     });
-    if (!isActive && onSelect) line.on('click', () => onSelect(t));
+    if (onSelect) line.on('click', () => onSelect(t));
     group.addLayer(line);
+    layers.set(t.id, line);
+  }
+  return layers;
+}
+
+// Cheap re-style when only the active track changes - no geometry rebuild.
+export function setActiveTrackStyle(trackLayers, activeTrackId) {
+  for (const [id, line] of trackLayers) {
+    const isActive = id === activeTrackId;
+    line.setStyle({
+      color: isActive ? '#e07a3f' : '#6b8f78',
+      weight: isActive ? 5 : 3,
+      opacity: isActive ? 0.95 : 0.55,
+    });
+    if (isActive) line.bringToFront();
   }
 }
 
