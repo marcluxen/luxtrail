@@ -8,6 +8,7 @@ import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
+import { buildTripHtml, downloadHtmlFile } from './export.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
 
 const PROXIMITY_ALERT_M = 30;
@@ -437,6 +438,18 @@ function wireUi() {
     const gpxString = buildGpx({ tracks: state.tracks, waypoints });
     downloadGpxFile(state.trip.name, gpxString);
     toast('GPX exported');
+  });
+
+  document.getElementById('btn-export-html').addEventListener('click', async () => {
+    if (!state.tracks.length && !state.pois.length && !state.waypoints.length) { toast('Nothing to export'); return; }
+    toast('Building export…');
+    try {
+      const html = await buildTripHtml(state.trip, state.tracks, state.waypoints, state.pois);
+      downloadHtmlFile(state.trip.name + '-viewer', html);
+      toast('Saved — open the file at home, no app needed');
+    } catch (err) {
+      toast('Export failed: ' + err.message);
+    }
   });
 
   document.getElementById('list-filter').addEventListener('input', (e) => {
