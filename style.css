@@ -260,6 +260,45 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
 
 .empty-hint { padding: 20px; text-align: center; color: var(--text-dim); font-size: 13px; }
 
+#search-bar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  z-index: 490;
+}
+
+#search-bar input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 14px;
+}
+
+#recording-indicator { color: var(--danger); font-weight: 600; }
+
+#list-filter {
+  margin: 8px;
+  width: calc(100% - 16px);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+}
+
+.heading-arrow div {
+  color: #3b82f6;
+  font-size: 20px;
+  text-shadow: 0 0 2px #fff, 0 0 2px #fff;
+  transition: transform 0.15s ease;
+}
+
 #toast {
   position: fixed;
   top: 60px;

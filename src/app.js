@@ -3,10 +3,14 @@ import { db, newId } from './db.js';
 import { parseGpx, buildGpx, downloadGpxFile } from './gpx.js';
 import * as mapmod from './map.js';
 import { GpsTracker } from './gps.js';
+import { TrackRecorder } from './recorder.js';
+import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
+
+const PROXIMITY_ALERT_M = 30;
 
 const state = {
   trip: null,
@@ -26,6 +30,11 @@ const state = {
   placingPoi: false,
   pendingPoiLatLng: null,
   pendingPhotoFiles: [],
+  recorder: new TrackRecorder(),
+  recordingLine: null,
+  lastAlertedId: null,
+  listFilter: '',
+  headingPermissionAsked: false,
 };
 
 async function init() {
@@ -84,11 +93,16 @@ async function loadTripData() {
   state.pois = await poimod.poisForTrip(tripId);
   state.activeTrack = state.tracks[0] || null;
 
+  const combinedPoints = [
+    ...state.waypoints.map((w) => ({ id: w.id, name: w.name, lat: w.lat, lon: w.lon })),
+    ...state.pois.map((p) => ({ id: p.id, name: p.name, lat: p.lat, lon: p.lon })),
+  ];
+  if (state.gps) state.gps.setPoints(combinedPoints);
+  if (state.gps) state.gps.setActiveTrack(state.activeTrack ? state.activeTrack.points : null);
+
   renderMapLayers();
   renderList();
   updateElevationPanel();
-
-  if (state.gps) state.gps.setActiveTrack(state.activeTrack ? state.activeTrack.points : null);
 
   if (state.activeTrack && state.activeTrack.points.length) {
     const latlngs = state.activeTrack.points.map((p) => [p.lat, p.lon]);
@@ -98,25 +112,42 @@ async function loadTripData() {
   }
 }
 
+function setActiveTrack(track) {
+  state.activeTrack = track;
+  state.gps.setActiveTrack(track ? track.points : null);
+  renderMapLayers();
+  updateElevationPanel();
+}
+
 function renderMapLayers() {
-  mapmod.drawTrack(state.map, state.groups.track, state.activeTrack ? state.activeTrack.points : null);
+  mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, setActiveTrack);
   mapmod.drawWaypoints(state.map, state.groups.waypoints, state.waypoints);
   mapmod.drawPois(state.map, state.groups.pois, state.pois, openPoiView);
+}
+
+function matchesFilter(text, category) {
+  if (!state.listFilter) return true;
+  const q = state.listFilter.toLowerCase();
+  return (text || '').toLowerCase().includes(q) || (category || '').toLowerCase().includes(q);
 }
 
 function renderList() {
   const container = document.getElementById('list-items');
   container.innerHTML = '';
 
-  if (!state.tracks.length && !state.waypoints.length && !state.pois.length) {
+  const tracks = state.tracks.filter((t) => matchesFilter(t.name));
+  const waypoints = state.waypoints.filter((w) => matchesFilter(w.name));
+  const pois = state.pois.filter((p) => matchesFilter(p.name, p.category));
+
+  if (!tracks.length && !waypoints.length && !pois.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-hint';
-    empty.textContent = 'Nothing here yet. Load a GPX file or add a POI.';
+    empty.textContent = state.listFilter ? 'No matches.' : 'Nothing here yet. Load a GPX file or add a POI.';
     container.appendChild(empty);
     return;
   }
 
-  for (const t of state.tracks) {
+  for (const t of tracks) {
     const stats = t.points.length > 1 ? computeProfile(t.points) : null;
     const meta = stats ? formatDistance(stats.stats.distance) : `${t.points.length} pts`;
     container.appendChild(listItem({
@@ -124,35 +155,34 @@ function renderList() {
       meta,
       kindLabel: 'Track',
       onClick: () => {
-        state.activeTrack = t;
-        state.gps.setActiveTrack(t.points);
-        renderMapLayers();
-        updateElevationPanel();
+        setActiveTrack(t);
         const latlngs = t.points.map((p) => [p.lat, p.lon]);
         state.map.fitBounds(latlngs, { padding: [30, 30] });
         togglePanel('list-panel', false);
       },
       onDelete: async () => {
+        if (!confirm(`Delete track "${t.name}"?`)) return;
         await db.delete('tracks', t.id);
         await loadTripData();
       },
     }));
   }
 
-  for (const w of state.waypoints) {
+  for (const w of waypoints) {
     container.appendChild(listItem({
       title: w.name,
       meta: `${w.lat.toFixed(4)}, ${w.lon.toFixed(4)}`,
       kindLabel: 'Waypoint',
       onClick: () => { state.map.setView([w.lat, w.lon], 16); togglePanel('list-panel', false); },
       onDelete: async () => {
+        if (!confirm(`Delete waypoint "${w.name}"?`)) return;
         await db.delete('waypoints', w.id);
         await loadTripData();
       },
     }));
   }
 
-  for (const p of state.pois) {
+  for (const p of pois) {
     container.appendChild(listItem({
       title: p.name,
       meta: p.category,
@@ -160,6 +190,7 @@ function renderList() {
       kindClass: 'poi',
       onClick: () => { state.map.setView([p.lat, p.lon], 16); openPoiView(p); togglePanel('list-panel', false); },
       onDelete: async () => {
+        if (!confirm(`Delete POI "${p.name}"?`)) return;
         await poimod.deletePoi(p.id);
         await loadTripData();
       },
@@ -222,9 +253,18 @@ function populateSourceSelect(sources, activeId) {
   }
 }
 
+function bearingLabel(deg) {
+  const dirs = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  return dirs[Math.round(deg / 45) % 8];
+}
+
 function handlePosition(info) {
   state.lastPosition = { lat: info.lat, lon: info.lon };
   mapmod.upsertLiveMarker(state.map, state.liveRef, info.lat, info.lon, info.accuracy || 15);
+
+  const compassHeading = info.compassHeading != null ? info.compassHeading : info.heading;
+  mapmod.upsertHeadingArrow(state.map, state.liveRef, info.lat, info.lon, compassHeading);
+
   const statusEl = document.getElementById('gps-status');
   statusEl.textContent = `GPS: ${info.accuracy ? Math.round(info.accuracy) + 'm accuracy' : 'live'}`;
   statusEl.classList.add('live');
@@ -240,12 +280,68 @@ function handlePosition(info) {
   } else {
     warn.classList.add('hidden');
   }
+
+  const nextCard = document.getElementById('next-waypoint-card');
+  if (info.nextInfo) {
+    nextCard.innerHTML = `→ <strong>${info.nextInfo.name}</strong><br>${formatDistance(info.nextInfo.distance)} · ${bearingLabel(info.nextInfo.bearing)}`;
+    nextCard.classList.remove('hidden');
+
+    if (info.nextInfo.distance <= PROXIMITY_ALERT_M && state.lastAlertedId !== info.nextInfo.id) {
+      state.lastAlertedId = info.nextInfo.id;
+      toast(`Near: ${info.nextInfo.name}`);
+      if ('vibrate' in navigator) navigator.vibrate([120, 60, 120]);
+    } else if (info.nextInfo.distance > PROXIMITY_ALERT_M + 15 && state.lastAlertedId === info.nextInfo.id) {
+      state.lastAlertedId = null;
+    }
+  } else {
+    nextCard.classList.add('hidden');
+  }
+
+  if (state.recorder.recording) {
+    state.recorder.addFix(info);
+    if (state.recorder.points.length > 1) {
+      const latlngs = state.recorder.points.map((p) => [p.lat, p.lon]);
+      if (!state.recordingLine) {
+        state.recordingLine = L.polyline(latlngs, { color: '#c65b4a', weight: 4, dashArray: '6 6' }).addTo(state.map);
+      } else {
+        state.recordingLine.setLatLngs(latlngs);
+      }
+    }
+  }
 }
 
 function handleGpsError(err) {
   toast('GPS error: ' + (err.message || 'unavailable'));
   document.getElementById('gps-status').textContent = 'GPS: off';
   document.getElementById('gps-status').classList.remove('live');
+}
+
+function requestHeadingIfNeeded() {
+  if (state.headingPermissionAsked) return;
+  state.headingPermissionAsked = true;
+
+  function onOrientation(e) {
+    let heading = null;
+    if (typeof e.webkitCompassHeading === 'number') {
+      heading = e.webkitCompassHeading; // iOS: already a true compass heading
+    } else if (e.alpha != null) {
+      heading = 360 - e.alpha; // rough approximation elsewhere
+    }
+    if (heading != null && state.lastPosition) {
+      mapmod.upsertHeadingArrow(state.map, state.liveRef, state.lastPosition.lat, state.lastPosition.lon, heading);
+    }
+  }
+
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    DeviceOrientationEvent.requestPermission()
+      .then((result) => {
+        if (result === 'granted') window.addEventListener('deviceorientation', onOrientation);
+      })
+      .catch(() => {});
+  } else if (typeof DeviceOrientationEvent !== 'undefined') {
+    window.addEventListener('deviceorientationabsolute', onOrientation);
+    window.addEventListener('deviceorientation', onOrientation);
+  }
 }
 
 async function openPoiView(poi) {
@@ -263,6 +359,7 @@ async function openPoiView(poi) {
     closeBtn.removeEventListener('click', onClose);
   }
   async function onDelete() {
+    if (!confirm(`Delete POI "${poi.name}"?`)) return;
     await poimod.deletePoi(poi.id);
     dlg.close();
     cleanup();
@@ -271,6 +368,53 @@ async function openPoiView(poi) {
   function onClose() { dlg.close(); cleanup(); }
   delBtn.addEventListener('click', onDelete);
   closeBtn.addEventListener('click', onClose);
+}
+
+async function shareLocation() {
+  let pos = state.lastPosition;
+  if (!pos) {
+    try {
+      const fix = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000 })
+      );
+      pos = { lat: fix.coords.latitude, lon: fix.coords.longitude };
+    } catch (err) {
+      toast('Could not get a GPS fix');
+      return;
+    }
+  }
+  const url = `https://www.google.com/maps?q=${pos.lat},${pos.lon}`;
+  const text = `My location: ${url}`;
+  if (navigator.share) {
+    navigator.share({ title: 'My location', text, url }).catch(() => {});
+  } else {
+    window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+  }
+}
+
+async function toggleRecording() {
+  if (!state.recorder.recording) {
+    if (!state.gpsOn) document.getElementById('btn-locate').click();
+    state.recorder.start();
+    document.getElementById('recording-indicator').classList.remove('hidden');
+    document.getElementById('btn-record').classList.add('active');
+    toast('Recording started');
+  } else {
+    const points = state.recorder.stop();
+    document.getElementById('recording-indicator').classList.add('hidden');
+    document.getElementById('btn-record').classList.remove('active');
+    if (state.recordingLine) { state.map.removeLayer(state.recordingLine); state.recordingLine = null; }
+
+    if (points.length > 1) {
+      const defaultName = `Recorded ${new Date().toLocaleDateString()}`;
+      const name = (await promptDialog('Track name', defaultName)) || defaultName;
+      await db.put('tracks', { id: newId(), tripId: state.trip.id, name, points });
+      toast('Track saved');
+      await loadTripData();
+    } else {
+      toast('Recording too short, discarded');
+    }
+  }
 }
 
 function wireUi() {
@@ -293,6 +437,11 @@ function wireUi() {
     toast('GPX exported');
   });
 
+  document.getElementById('list-filter').addEventListener('input', (e) => {
+    state.listFilter = e.target.value.trim();
+    renderList();
+  });
+
   document.getElementById('btn-settings').addEventListener('click', () => togglePanel('settings-panel'));
   document.getElementById('btn-close-settings').addEventListener('click', () => togglePanel('settings-panel', false));
 
@@ -309,6 +458,7 @@ function wireUi() {
     if (state.gpsOn) {
       state.followMode = true;
       state.gps.start();
+      requestHeadingIfNeeded();
       recenterBtn.classList.remove('hidden');
       toast('GPS tracking on');
     } else {
@@ -316,7 +466,8 @@ function wireUi() {
       recenterBtn.classList.add('hidden');
       document.getElementById('gps-status').textContent = 'GPS: off';
       document.getElementById('gps-status').classList.remove('live');
-      toast('GPS tracking off');
+      document.getElementById('next-waypoint-card').classList.add('hidden');
+      if (state.recorder.recording) toggleRecording();
     }
   });
 
@@ -327,13 +478,36 @@ function wireUi() {
     }
   });
 
+  document.getElementById('btn-record').addEventListener('click', toggleRecording);
+  document.getElementById('btn-share-location').addEventListener('click', shareLocation);
+
+  document.getElementById('btn-search-toggle').addEventListener('click', () => {
+    document.getElementById('search-bar').classList.toggle('hidden');
+    document.getElementById('search-input').focus();
+  });
+  document.getElementById('btn-search-close').addEventListener('click', () => {
+    document.getElementById('search-bar').classList.add('hidden');
+  });
+  async function runSearch() {
+    const q = document.getElementById('search-input').value.trim();
+    if (!q) return;
+    try {
+      const results = await searchPlace(q);
+      if (!results.length) { toast('No results'); return; }
+      state.map.setView([results[0].lat, results[0].lon], 13);
+      toast(results[0].name.split(',')[0]);
+      document.getElementById('search-bar').classList.add('hidden');
+    } catch (err) {
+      toast('Search needs a signal');
+    }
+  }
+  document.getElementById('btn-search-go').addEventListener('click', runSearch);
+  document.getElementById('search-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') runSearch();
+  });
+
   document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
 
-  document.getElementById('btn-use-gps').addEventListener('click', () => {
-    if (!state.lastPosition) { toast('No GPS fix yet'); return; }
-    state.pendingPoiLatLng = { ...state.lastPosition };
-    document.getElementById('poi-coords').textContent = `${state.lastPosition.lat.toFixed(5)}, ${state.lastPosition.lon.toFixed(5)} (GPS)`;
-  });
   document.getElementById('btn-attach-photos').addEventListener('click', () => document.getElementById('photo-input').click());
   document.getElementById('photo-input').addEventListener('change', (e) => {
     state.pendingPhotoFiles = Array.from(e.target.files);
@@ -344,6 +518,12 @@ function wireUi() {
       img.src = URL.createObjectURL(f);
       container.appendChild(img);
     }
+  });
+
+  document.getElementById('btn-use-gps').addEventListener('click', () => {
+    if (!state.lastPosition) { toast('No GPS fix yet'); return; }
+    state.pendingPoiLatLng = { ...state.lastPosition };
+    document.getElementById('poi-coords').textContent = `${state.lastPosition.lat.toFixed(5)}, ${state.lastPosition.lon.toFixed(5)} (GPS)`;
   });
 
   document.getElementById('poi-cancel').addEventListener('click', () => {
@@ -366,6 +546,8 @@ function wireUi() {
     }
     await db.setSetting('currentTripId', state.trip.id);
     populateTripSelect();
+    state.listFilter = '';
+    document.getElementById('list-filter').value = '';
     await loadTripData();
   });
 

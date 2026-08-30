@@ -1,4 +1,4 @@
-const APP_CACHE = 'luxtrail-app-v3';
+const APP_CACHE = 'luxtrail-app-v4';
 const TILE_CACHE = 'luxtrail-tiles-v1';
 
 const APP_SHELL = [
@@ -14,6 +14,8 @@ const APP_SHELL = [
   './src/geo.js',
   './src/tiles.js',
   './src/gps.js',
+  './src/recorder.js',
+  './src/geocode.js',
   './src/poi.js',
   './src/map.js',
   './src/ui.js',
@@ -42,6 +44,12 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   const isSameOrigin = url.origin === self.location.origin;
   const isAppShellAsset = isSameOrigin || req.url.includes('unpkg.com/leaflet');
+
+  if (req.url.includes('nominatim.openstreetmap.org')) {
+    // Place search: never cache, always hit the network so it fails cleanly offline
+    event.respondWith(fetch(req));
+    return;
+  }
 
   if (isAppShellAsset) {
     event.respondWith(

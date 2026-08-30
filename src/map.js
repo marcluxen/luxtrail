@@ -1,5 +1,13 @@
 /* global L */
-import { resolveTileUrl } from './tiles.js';
+
+export const CATEGORY_COLORS = {
+  water: '#3b82f6',
+  viewpoint: '#8b5cf6',
+  junction: '#eab308',
+  hazard: '#c65b4a',
+  camp: '#22c55e',
+  other: '#a9b8ac',
+};
 
 export function createMap(elementId) {
   const map = L.map(elementId, { zoomControl: false, attributionControl: true }).setView([13.0, 102.5], 12);
@@ -21,13 +29,22 @@ export function setTileLayer(map, currentLayerRef, source) {
   currentLayerRef.source = source;
 }
 
-export function drawTrack(map, group, points, color = '#e07a3f') {
+// Draws every track; the active one is highlighted, others dimmed. Clicking a
+// dimmed track calls onSelect(track) so it becomes active.
+export function drawTracks(map, group, tracks, activeTrackId, onSelect) {
   group.clearLayers();
-  if (!points || points.length < 2) return null;
-  const latlngs = points.map((p) => [p.lat, p.lon]);
-  const line = L.polyline(latlngs, { color, weight: 4, opacity: 0.9 });
-  group.addLayer(line);
-  return line;
+  for (const t of tracks) {
+    if (!t.points || t.points.length < 2) continue;
+    const isActive = t.id === activeTrackId;
+    const latlngs = t.points.map((p) => [p.lat, p.lon]);
+    const line = L.polyline(latlngs, {
+      color: isActive ? '#e07a3f' : '#6b8f78',
+      weight: isActive ? 5 : 3,
+      opacity: isActive ? 0.95 : 0.55,
+    });
+    if (!isActive && onSelect) line.on('click', () => onSelect(t));
+    group.addLayer(line);
+  }
 }
 
 export function drawWaypoints(map, group, waypoints, onClick) {
@@ -45,8 +62,9 @@ export function drawWaypoints(map, group, waypoints, onClick) {
 export function drawPois(map, group, pois, onOpen) {
   group.clearLayers();
   for (const poi of pois) {
+    const color = CATEGORY_COLORS[poi.category] || CATEGORY_COLORS.other;
     const marker = L.circleMarker([poi.lat, poi.lon], {
-      radius: 8, color: '#e07a3f', weight: 2, fillColor: '#b8632f', fillOpacity: 1,
+      radius: 8, color: '#eef0ea', weight: 2, fillColor: color, fillOpacity: 1,
     });
     marker.bindPopup(popupHtml(poi.name, poi.category));
     marker.on('click', () => onOpen && onOpen(poi));
@@ -73,5 +91,25 @@ export function upsertLiveMarker(map, ref, lat, lon, accuracy) {
     ref.marker.setLatLng([lat, lon]);
     ref.accuracyCircle.setLatLng([lat, lon]);
     ref.accuracyCircle.setRadius(accuracy);
+  }
+}
+
+const headingIcon = (deg) => L.divIcon({
+  className: 'heading-arrow',
+  html: `<div style="transform: rotate(${deg}deg);">▲</div>`,
+  iconSize: [24, 24],
+  iconAnchor: [12, 12],
+});
+
+export function upsertHeadingArrow(map, ref, lat, lon, heading) {
+  if (heading == null || Number.isNaN(heading)) {
+    if (ref.headingMarker) { map.removeLayer(ref.headingMarker); ref.headingMarker = null; }
+    return;
+  }
+  if (!ref.headingMarker) {
+    ref.headingMarker = L.marker([lat, lon], { icon: headingIcon(heading), interactive: false }).addTo(map);
+  } else {
+    ref.headingMarker.setLatLng([lat, lon]);
+    ref.headingMarker.setIcon(headingIcon(heading));
   }
 }

@@ -33,8 +33,24 @@ src/
   poi.js             POI CRUD + photo compression
   tiles.js           tile source config, offline area precaching
   elevation.js        elevation profile + stats
+  recorder.js         builds a point array from live GPS fixes while recording
+  geocode.js           Nominatim place search (online-only, used for trip planning)
   ui.js               toast, prompt dialog, list rendering helpers
 ```
+
+## Features
+
+- Load/export GPX tracks and waypoints; all loaded tracks render at once, the active one highlighted, others dimmed — click a dimmed track to make it active
+- POIs by category (water, viewpoint, junction, hazard, camp, other), color-coded on the map, with notes and photos — tap the map to place one, or use your live GPS fix instead
+- Record your own track live while hiking; saved as a normal track on stop
+- Live GPS position with follow mode (auto-recenter; breaks on manual pan, resume with the 🎯 button), off-track warning, and nearest-point distance/bearing with a proximity vibrate+toast
+- Device compass heading arrow where supported
+- Elevation profile + distance/gain/loss/duration stats
+- Share current location via the OS share sheet (or SMS fallback) — useful with no signal once you're back in range
+- Place search (needs a signal) for planning before you go offline
+- Trips group tracks/waypoints/POIs so different hikes don't mix
+- Tile source picker, not hardcoded — add any XYZ provider; "download current view" precaches tiles for offline use
+- Deletions ask for confirmation
 
 ## Data
 

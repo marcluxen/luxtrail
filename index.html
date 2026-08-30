@@ -20,11 +20,20 @@
     <div class="toolbar">
       <button class="icon-btn" id="btn-load" title="Load GPX">📂</button>
       <button class="icon-btn" id="btn-add-poi" title="Add POI at map center">📍</button>
+      <button class="icon-btn" id="btn-record" title="Record a track">⏺</button>
       <button class="icon-btn" id="btn-elevation" title="Elevation profile">⛰</button>
+      <button class="icon-btn" id="btn-share-location" title="Share my location">📤</button>
       <button class="icon-btn" id="btn-list" title="Tracks & Points">☰</button>
+      <button class="icon-btn" id="btn-search-toggle" title="Search a place">🔎</button>
       <button class="icon-btn" id="btn-settings" title="Map sources & offline">⚙</button>
     </div>
   </header>
+
+  <div id="search-bar" class="hidden">
+    <input type="text" id="search-input" placeholder="Search a place (needs signal)…">
+    <button class="icon-btn" id="btn-search-go">🔎</button>
+    <button class="icon-btn" id="btn-search-close">✕</button>
+  </div>
 
   <div id="map"></div>
 
@@ -39,7 +48,9 @@
 
   <div id="status-bar">
     <div class="card" id="gps-status">GPS: off</div>
+    <div class="card hidden" id="next-waypoint-card"></div>
     <div class="card hidden" id="off-track-warning">Off track</div>
+    <div class="card hidden" id="recording-indicator">⏺ Recording</div>
     <button class="icon-btn hidden" id="btn-recenter" title="Recenter and follow">🎯</button>
     <button class="fab" id="btn-locate">Locate me</button>
   </div>
@@ -52,6 +63,7 @@
         <button class="icon-btn" id="btn-close-list">✕</button>
       </div>
     </div>
+    <input type="text" id="list-filter" placeholder="Filter by name or category…">
     <div id="list-items"></div>
   </div>
 
