@@ -73,7 +73,11 @@ for (const p of DATA.pois) {
   let html = '<h2>' + p.name + '</h2><div class="cat">' + p.category + '</div>';
   if (p.notes) html += '<div class="notes">' + p.notes + '</div>';
   if (p.photoFiles && p.photoFiles.length) {
-    html += '<div class="photos">' + p.photoFiles.map(f => '<img src="' + f + '" onclick="openLightbox(this.src)">').join('') + '</div>';
+  if (p.photoFiles && p.photoFiles.length) {
+    html += '<div class="photos">' + p.photoFiles.map(f => {
+      const base = f.split('/').pop();
+      return '<div style="text-align:center"><img src="' + f + '" onclick="openLightbox(this.src)"><div style="font-size:9px;opacity:.6;max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + base + '</div></div>';
+    }).join('') + '</div>';
   }
   L.circleMarker([p.lat, p.lon], { radius: 8, color: '#eef0ea', weight: 2, fillColor: color, fillOpacity: 1 })
     .addTo(map).bindPopup(html, { maxWidth: 280 });
@@ -92,19 +96,38 @@ function openLightbox(src) {
 </html>`;
 }
 
+function sanitizeFilename(name) {
+  return String(name).replace(/[^a-zA-Z0-9._-]/g, '_') || 'photo.jpg';
+}
+
 // Everything in one zip: index.html + a photos/ folder with every photo as
-// a real file. No splitting, no base64, no exceptions.
+// a real file, kept under its ORIGINAL filename (from your phone's picker)
+// so you can trace an exported photo back to the original on your device.
+// Two POIs with the same original filename get a suffix so nothing collides.
 export async function buildTripZip(trip, tracks, waypoints, pois, onProgress) {
   const files = {};
-  let photoIndex = 0;
+  const usedNames = new Set();
   let done = 0;
   const total = pois.reduce((sum, p) => sum + (p.photos ? p.photos.length : 0), 0);
 
   const dataPois = [];
   for (const poi of pois) {
     const photoFiles = [];
-    for (const blob of poi.photos || []) {
-      const name = `photos/img${String(photoIndex++).padStart(4, '0')}.jpg`;
+    for (const photo of poi.photos || []) {
+      const blob = photo && photo.blob ? photo.blob : photo;
+      const originalName = photo && photo.name ? photo.name : 'photo.jpg';
+
+      let filename = sanitizeFilename(originalName);
+      let candidate = filename;
+      let n = 2;
+      while (usedNames.has(candidate)) {
+        const dot = filename.lastIndexOf('.');
+        candidate = dot === -1 ? `${filename}-${n}` : `${filename.slice(0, dot)}-${n}${filename.slice(dot)}`;
+        n++;
+      }
+      usedNames.add(candidate);
+
+      const name = `photos/${candidate}`;
       files[name] = [await blobToUint8Array(blob), { level: 0 }];
       photoFiles.push(name);
       done++;

@@ -5,7 +5,7 @@ export async function createPoi({ tripId, name, category, notes, lat, lon, photo
   if (photoFiles && photoFiles.length) {
     for (const file of photoFiles) {
       const blob = await compressImage(file);
-      photos.push(blob);
+      photos.push({ blob, name: file.name || 'photo.jpg' });
     }
   }
   const poi = {
@@ -37,13 +37,15 @@ export async function poisForTrip(tripId) {
 export async function addPhotosToPoi(poi, photoFiles) {
   for (const file of photoFiles) {
     const blob = await compressImage(file);
-    poi.photos.push(blob);
+    poi.photos.push({ blob, name: file.name || 'photo.jpg' });
   }
   await db.put('pois', poi);
   return poi;
 }
 
-function compressImage(file, maxWidth = 1200, quality = 0.8) {
+// A page you glance at doesn't need 1200px - 1000 is plenty and noticeably
+// smaller. Original photo stays untouched on the phone regardless.
+function compressImage(file, maxWidth = 1000, quality = 0.78) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const reader = new FileReader();

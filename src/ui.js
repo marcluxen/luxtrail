@@ -30,12 +30,31 @@ export function promptDialog(title, defaultValue = '') {
   });
 }
 
-export function renderPhotoPreviews(container, blobs) {
+export function renderPhotoPreviews(container, photos) {
   container.innerHTML = '';
-  for (const blob of blobs) {
+  for (const p of photos) {
+    // supports both the current {blob, name} shape and a bare Blob for
+    // anything stored before filenames were kept
+    const blob = p && p.blob ? p.blob : p;
+    const name = p && p.name ? p.name : null;
+
+    const wrap = document.createElement('div');
+    wrap.style.textAlign = 'center';
     const img = document.createElement('img');
     img.src = URL.createObjectURL(blob);
-    container.appendChild(img);
+    wrap.appendChild(img);
+    if (name) {
+      const cap = document.createElement('div');
+      cap.textContent = name;
+      cap.style.fontSize = '10px';
+      cap.style.opacity = '0.65';
+      cap.style.maxWidth = '64px';
+      cap.style.overflow = 'hidden';
+      cap.style.textOverflow = 'ellipsis';
+      cap.style.whiteSpace = 'nowrap';
+      wrap.appendChild(cap);
+    }
+    container.appendChild(wrap);
   }
 }
 
