@@ -23,7 +23,6 @@ const state = {
   gpsOn: false,
   followMode: true,
   lastPosition: null,
-  wakeLock: null,
   placingPoi: false,
   pendingPoiLatLng: null,
   pendingPhotoFiles: [],
@@ -65,30 +64,10 @@ async function init() {
     openPoiDialog();
   });
 
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && state.gpsOn) acquireWakeLock();
-  });
-
   populateTripSelect();
   await loadTripData();
   populateSourceSelect(sources, source.id);
   wireUi();
-}
-
-async function acquireWakeLock() {
-  if (!('wakeLock' in navigator)) return;
-  try {
-    state.wakeLock = await navigator.wakeLock.request('screen');
-  } catch (err) {
-    // ignore - not fatal, screen will just sleep on its own timeout
-  }
-}
-
-function releaseWakeLock() {
-  if (state.wakeLock) {
-    state.wakeLock.release().catch(() => {});
-    state.wakeLock = null;
-  }
 }
 
 function setPlacingMode(on) {
@@ -330,12 +309,10 @@ function wireUi() {
     if (state.gpsOn) {
       state.followMode = true;
       state.gps.start();
-      acquireWakeLock();
       recenterBtn.classList.remove('hidden');
       toast('GPS tracking on');
     } else {
       state.gps.stop();
-      releaseWakeLock();
       recenterBtn.classList.add('hidden');
       document.getElementById('gps-status').textContent = 'GPS: off';
       document.getElementById('gps-status').classList.remove('live');
