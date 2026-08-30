@@ -8,6 +8,7 @@ import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
+import { nearestPointIndex, trackStats } from './geo.js';
 import { buildTripZip, downloadZipFile } from './export.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
 
@@ -31,6 +32,10 @@ const state = {
   lastPosition: null,
   placingPoi: false,
   pendingPoiLatLng: null,
+  measuringSegment: false,
+  segmentStartIdx: null,
+  segmentEndIdx: null,
+  segmentGroup: null,
   pendingPhotoFiles: [],
   recorder: new TrackRecorder(),
   recordingLine: null,
@@ -59,6 +64,7 @@ async function init() {
   state.groups.track = L.layerGroup().addTo(state.map);
   state.groups.waypoints = L.layerGroup().addTo(state.map);
   state.groups.pois = L.layerGroup().addTo(state.map);
+  state.segmentGroup = L.layerGroup().addTo(state.map);
 
   const sources = await tilesmod.listTileSources();
   const sourceId = await db.getSetting('currentSourceId', sources[0].id);
@@ -69,10 +75,15 @@ async function init() {
 
   state.map.on('dragstart', () => { state.followMode = false; });
   state.map.on('click', (e) => {
-    if (!state.placingPoi) return;
-    state.pendingPoiLatLng = { lat: e.latlng.lat, lon: e.latlng.lng };
-    setPlacingMode(false);
-    openPoiDialog();
+    if (state.placingPoi) {
+      state.pendingPoiLatLng = { lat: e.latlng.lat, lon: e.latlng.lng };
+      setPlacingMode(false);
+      openPoiDialog();
+      return;
+    }
+    if (state.measuringSegment) {
+      pickSegmentPoint(e.latlng);
+    }
   });
 
   populateTripSelect();
@@ -82,10 +93,54 @@ async function init() {
 }
 
 function setPlacingMode(on) {
+  if (on) setMeasuringModeOff();
   state.placingPoi = on;
   document.getElementById('btn-add-poi').classList.toggle('active', on);
   document.getElementById('map').classList.toggle('placing-poi', on);
   if (on) toast('Tap the map to place the POI');
+}
+
+function setMeasuringMode(on) {
+  if (on) setPlacingMode(false);
+  state.measuringSegment = on;
+  document.getElementById('btn-measure').classList.toggle('active', on);
+  document.getElementById('map').classList.toggle('placing-poi', on);
+  if (on) {
+    if (!state.activeTrack) { toast('Load or select a track first'); state.measuringSegment = false; document.getElementById('btn-measure').classList.remove('active'); return; }
+    state.segmentStartIdx = null;
+    state.segmentEndIdx = null;
+    state.segmentGroup.clearLayers();
+    updateElevationPanel();
+    toast('Tap two points on the route');
+  }
+}
+
+function pickSegmentPoint(latlng) {
+  const idx = nearestPointIndex(latlng, state.activeTrack.points);
+  if (state.segmentStartIdx == null) {
+    state.segmentStartIdx = idx;
+    toast('Start set — tap the end point');
+  } else {
+    state.segmentEndIdx = idx;
+    setMeasuringModeOff();
+    toast('Segment selected');
+    document.getElementById('elevation-panel').classList.remove('hidden');
+  }
+  mapmod.drawSegmentSelection(state.map, state.segmentGroup, state.activeTrack.points, state.segmentStartIdx, state.segmentEndIdx);
+  updateElevationPanel();
+}
+
+function setMeasuringModeOff() {
+  state.measuringSegment = false;
+  document.getElementById('btn-measure').classList.remove('active');
+  document.getElementById('map').classList.remove('placing-poi');
+}
+
+function clearSegment() {
+  state.segmentStartIdx = null;
+  state.segmentEndIdx = null;
+  state.segmentGroup.clearLayers();
+  updateElevationPanel();
 }
 
 async function loadTripData() {
@@ -121,7 +176,7 @@ function setActiveTrack(track) {
   state.activeTrack = track;
   state.gps.setActiveTrack(track ? track.points : null);
   mapmod.setActiveTrackStyle(state.trackLayers, track ? track.id : null);
-  updateElevationPanel();
+  clearSegment();
 }
 
 function renderMapLayers() {
@@ -205,17 +260,36 @@ function renderList() {
 function updateElevationPanel() {
   const panel = document.getElementById('elevation-panel');
   const track = state.activeTrack;
+  const clearBtn = document.getElementById('btn-clear-segment');
+
   if (!track || track.points.length < 2) {
     panel.classList.add('hidden');
+    clearBtn.classList.add('hidden');
     return;
   }
-  const profile = track.stats;
-  document.getElementById('elevation-title').textContent = track.name;
+
+  const hasSegment = state.segmentStartIdx != null && state.segmentEndIdx != null;
+  clearBtn.classList.toggle('hidden', !hasSegment);
+
+  let points, profile, title;
+  if (hasSegment) {
+    const lo = Math.min(state.segmentStartIdx, state.segmentEndIdx);
+    const hi = Math.max(state.segmentStartIdx, state.segmentEndIdx);
+    points = track.points.slice(lo, hi + 1);
+    profile = points.length > 1 ? computeProfile(points) : null;
+    title = `${track.name} — segment (${points.length} pts)`;
+  } else {
+    points = track.points;
+    profile = track.stats;
+    title = track.name;
+  }
+
+  document.getElementById('elevation-title').textContent = title;
   const chartEl = document.getElementById('elevation-chart');
   const statsEl = document.getElementById('elevation-stats');
 
   if (!profile) {
-    chartEl.innerHTML = '<div class="hint">No elevation data in this track.</div>';
+    chartEl.innerHTML = '<div class="hint">No elevation data here.</div>';
     statsEl.innerHTML = '';
     return;
   }
@@ -524,6 +598,8 @@ function wireUi() {
   });
 
   document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
+  document.getElementById('btn-measure').addEventListener('click', () => setMeasuringMode(!state.measuringSegment));
+  document.getElementById('btn-clear-segment').addEventListener('click', clearSegment);
 
   document.getElementById('btn-attach-photos').addEventListener('click', () => document.getElementById('photo-input').click());
   document.getElementById('photo-input').addEventListener('change', (e) => {

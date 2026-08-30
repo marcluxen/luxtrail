@@ -67,6 +67,18 @@ export function nearestSegmentInRange(p, points, startIdx, endIdx, step = 1) {
   return { distance: min, index: idx };
 }
 
+// One-off nearest-point lookup for a tap-to-select action (not the live
+// per-GPS-fix hot path), so a full scan is fine even on a large track -
+// it runs once per tap, not dozens of times a minute.
+export function nearestPointIndex(latlng, points) {
+  let min = Infinity, idx = 0;
+  for (let i = 0; i < points.length; i++) {
+    const d = haversine(latlng.lat, latlng.lon, points[i].lat, points[i].lon);
+    if (d < min) { min = d; idx = i; }
+  }
+  return idx;
+}
+
 export function trackStats(points) {
   let distance = 0, gain = 0, loss = 0;
   const cumulative = [0];

@@ -21,6 +21,7 @@
       <button class="icon-btn" id="btn-load" title="Load GPX">📂</button>
       <button class="icon-btn" id="btn-add-poi" title="Add POI at map center">📍</button>
       <button class="icon-btn" id="btn-record" title="Record a track">⏺</button>
+      <button class="icon-btn" id="btn-measure" title="Measure a segment - tap two points on the route">📏</button>
       <button class="icon-btn" id="btn-elevation" title="Elevation profile">⛰</button>
       <button class="icon-btn" id="btn-share-location" title="Share my location">📤</button>
       <button class="icon-btn" id="btn-list" title="Tracks & Points">☰</button>
@@ -40,7 +41,10 @@
   <div id="elevation-panel" class="sheet hidden">
     <div class="sheet-header">
       <span id="elevation-title">Elevation</span>
-      <button class="icon-btn" id="btn-close-elevation">✕</button>
+      <div class="toolbar">
+        <button class="btn hidden" id="btn-clear-segment" style="font-size:12px;padding:6px 10px;" title="Show full route again">✕ segment</button>
+        <button class="icon-btn" id="btn-close-elevation">✕</button>
+      </div>
     </div>
     <div id="elevation-chart"></div>
     <div id="elevation-stats" class="stats-row"></div>

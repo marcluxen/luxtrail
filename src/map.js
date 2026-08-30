@@ -99,6 +99,30 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// Draws the highlighted sub-section between two picked points on the
+// active track, plus A/B markers. group should be a dedicated layer group
+// so it can be cleared independently of the main track/waypoint/poi layers.
+export function drawSegmentSelection(map, group, points, startIdx, endIdx) {
+  group.clearLayers();
+  if (startIdx == null) return;
+
+  const a = points[startIdx];
+  L.marker([a.lat, a.lon], {
+    icon: L.divIcon({ className: '', html: '<div class="segment-marker">A</div>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+  }).addTo(group);
+
+  if (endIdx == null) return;
+
+  const b = points[endIdx];
+  L.marker([b.lat, b.lon], {
+    icon: L.divIcon({ className: '', html: '<div class="segment-marker">B</div>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+  }).addTo(group);
+
+  const lo = Math.min(startIdx, endIdx), hi = Math.max(startIdx, endIdx);
+  const slice = points.slice(lo, hi + 1).map((p) => [p.lat, p.lon]);
+  L.polyline(slice, { color: '#3b82f6', weight: 7, opacity: 0.85 }).addTo(group);
+}
+
 export function upsertLiveMarker(map, ref, lat, lon, accuracy) {
   if (!ref.marker) {
     ref.marker = L.circleMarker([lat, lon], {
