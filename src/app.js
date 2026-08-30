@@ -61,6 +61,7 @@ async function init() {
   }
   const lastTripId = await db.getSetting('currentTripId', state.trips[0].id);
   state.trip = state.trips.find((t) => t.id === lastTripId) || state.trips[0];
+  await db.setSetting('currentTripId', state.trip.id); // make the fallback stick, not just live in memory
 
   state.map = mapmod.createMap('map');
   state.groups.track = L.layerGroup().addTo(state.map);
