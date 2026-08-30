@@ -50,9 +50,18 @@ export async function deleteTileSource(id) {
   await db.delete('tileSources', id);
 }
 
-export function resolveTileUrl(source, z, x, y, subLetter) {
+// Leaflet picks a subdomain per-tile as Math.abs(x+y) % subdomains.length.
+// Precached tiles must use the exact same URL Leaflet will request at
+// runtime, or they silently miss the cache when offline.
+function pickSubdomain(source, x, y) {
+  const subs = source.subdomains || 'a';
+  const index = Math.abs(x + y) % subs.length;
+  return subs[index];
+}
+
+export function resolveTileUrl(source, z, x, y) {
   let url = source.urlTemplate
-    .replace('{s}', subLetter || (source.subdomains ? source.subdomains[0] : 'a'))
+    .replace('{s}', pickSubdomain(source, x, y))
     .replace('{z}', z)
     .replace('{x}', x)
     .replace('{y}', y);

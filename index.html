@@ -74,7 +74,10 @@
     </div>
     <div class="settings-body">
       <label>Active source</label>
-      <select id="source-select"></select>
+      <div style="display:flex; gap:6px;">
+        <select id="source-select" style="flex:1;"></select>
+        <button class="icon-btn" id="btn-delete-source" title="Delete this source">🗑</button>
+      </div>
 
       <div class="divider"></div>
       <h3>Add custom source</h3>

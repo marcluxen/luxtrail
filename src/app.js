@@ -384,11 +384,10 @@ async function shareLocation() {
     }
   }
   const url = `https://www.google.com/maps?q=${pos.lat},${pos.lon}`;
-  const text = `My location: ${url}`;
   if (navigator.share) {
-    navigator.share({ title: 'My location', text, url }).catch(() => {});
+    navigator.share({ title: 'My location', text: 'My location:', url }).catch(() => {});
   } else {
-    window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+    window.location.href = `sms:?&body=${encodeURIComponent('My location: ' + url)}`;
   }
 }
 
@@ -557,6 +556,20 @@ function wireUi() {
     mapmod.setTileLayer(state.map, state.layerRef, source);
     await db.setSetting('currentSourceId', source.id);
     toast(`Map source: ${source.name}`);
+  });
+
+  document.getElementById('btn-delete-source').addEventListener('click', async () => {
+    const sources = await tilesmod.listTileSources();
+    if (sources.length <= 1) { toast("Can't delete the last remaining source"); return; }
+    const id = document.getElementById('source-select').value;
+    const source = sources.find((s) => s.id === id);
+    if (!confirm(`Delete map source "${source.name}"?`)) return;
+    await tilesmod.deleteTileSource(id);
+    const remaining = await tilesmod.listTileSources();
+    populateSourceSelect(remaining, remaining[0].id);
+    mapmod.setTileLayer(state.map, state.layerRef, remaining[0]);
+    await db.setSetting('currentSourceId', remaining[0].id);
+    toast('Source deleted');
   });
 
   document.getElementById('btn-add-source').addEventListener('click', async () => {
