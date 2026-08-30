@@ -21,6 +21,11 @@ const state = {
   groups: {},
   gps: null,
   gpsOn: false,
+  followMode: true,
+  lastPosition: null,
+  wakeLock: null,
+  placingPoi: false,
+  pendingPoiLatLng: null,
   pendingPhotoFiles: [],
 };
 
@@ -52,10 +57,45 @@ async function init() {
 
   state.gps = new GpsTracker({ onPosition: handlePosition, onError: handleGpsError });
 
+  state.map.on('dragstart', () => { state.followMode = false; });
+  state.map.on('click', (e) => {
+    if (!state.placingPoi) return;
+    state.pendingPoiLatLng = { lat: e.latlng.lat, lon: e.latlng.lng };
+    setPlacingMode(false);
+    openPoiDialog();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && state.gpsOn) acquireWakeLock();
+  });
+
   populateTripSelect();
   await loadTripData();
   populateSourceSelect(sources, source.id);
   wireUi();
+}
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  try {
+    state.wakeLock = await navigator.wakeLock.request('screen');
+  } catch (err) {
+    // ignore - not fatal, screen will just sleep on its own timeout
+  }
+}
+
+function releaseWakeLock() {
+  if (state.wakeLock) {
+    state.wakeLock.release().catch(() => {});
+    state.wakeLock = null;
+  }
+}
+
+function setPlacingMode(on) {
+  state.placingPoi = on;
+  document.getElementById('btn-add-poi').classList.toggle('active', on);
+  document.getElementById('map').classList.toggle('placing-poi', on);
+  if (on) toast('Tap the map to place the POI');
 }
 
 async function loadTripData() {
@@ -204,10 +244,15 @@ function populateSourceSelect(sources, activeId) {
 }
 
 function handlePosition(info) {
+  state.lastPosition = { lat: info.lat, lon: info.lon };
   mapmod.upsertLiveMarker(state.map, state.liveRef, info.lat, info.lon, info.accuracy || 15);
   const statusEl = document.getElementById('gps-status');
   statusEl.textContent = `GPS: ${info.accuracy ? Math.round(info.accuracy) + 'm accuracy' : 'live'}`;
   statusEl.classList.add('live');
+
+  if (state.followMode) {
+    state.map.setView([info.lat, info.lon], state.map.getZoom());
+  }
 
   const warn = document.getElementById('off-track-warning');
   if (info.isOffTrack) {
@@ -281,18 +326,37 @@ function wireUi() {
 
   document.getElementById('btn-locate').addEventListener('click', () => {
     state.gpsOn = !state.gpsOn;
+    const recenterBtn = document.getElementById('btn-recenter');
     if (state.gpsOn) {
+      state.followMode = true;
       state.gps.start();
+      acquireWakeLock();
+      recenterBtn.classList.remove('hidden');
       toast('GPS tracking on');
     } else {
       state.gps.stop();
+      releaseWakeLock();
+      recenterBtn.classList.add('hidden');
       document.getElementById('gps-status').textContent = 'GPS: off';
       document.getElementById('gps-status').classList.remove('live');
       toast('GPS tracking off');
     }
   });
 
-  document.getElementById('btn-add-poi').addEventListener('click', () => openPoiDialog());
+  document.getElementById('btn-recenter').addEventListener('click', () => {
+    state.followMode = true;
+    if (state.lastPosition) {
+      state.map.setView([state.lastPosition.lat, state.lastPosition.lon], state.map.getZoom());
+    }
+  });
+
+  document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
+
+  document.getElementById('btn-use-gps').addEventListener('click', () => {
+    if (!state.lastPosition) { toast('No GPS fix yet'); return; }
+    state.pendingPoiLatLng = { ...state.lastPosition };
+    document.getElementById('poi-coords').textContent = `${state.lastPosition.lat.toFixed(5)}, ${state.lastPosition.lon.toFixed(5)} (GPS)`;
+  });
   document.getElementById('btn-attach-photos').addEventListener('click', () => document.getElementById('photo-input').click());
   document.getElementById('photo-input').addEventListener('change', (e) => {
     state.pendingPhotoFiles = Array.from(e.target.files);
@@ -305,7 +369,10 @@ function wireUi() {
     }
   });
 
-  document.getElementById('poi-cancel').addEventListener('click', () => document.getElementById('poi-dialog').close());
+  document.getElementById('poi-cancel').addEventListener('click', () => {
+    state.pendingPoiLatLng = null;
+    document.getElementById('poi-dialog').close();
+  });
   document.getElementById('poi-save').addEventListener('click', savePoiFromDialog);
 
   document.getElementById('trip-select').addEventListener('change', async (e) => {
@@ -373,23 +440,28 @@ function openPoiDialog() {
   document.getElementById('poi-notes').value = '';
   document.getElementById('poi-photo-preview').innerHTML = '';
   state.pendingPhotoFiles = [];
+  const coordsEl = document.getElementById('poi-coords');
+  coordsEl.textContent = state.pendingPoiLatLng
+    ? `${state.pendingPoiLatLng.lat.toFixed(5)}, ${state.pendingPoiLatLng.lon.toFixed(5)}`
+    : '';
   document.getElementById('poi-dialog').showModal();
 }
 
 async function savePoiFromDialog() {
   const name = document.getElementById('poi-name').value.trim();
   if (!name) { toast('Name required'); return; }
+  if (!state.pendingPoiLatLng) { toast('No location set — tap the map first'); return; }
   const category = document.getElementById('poi-category').value;
   const notes = document.getElementById('poi-notes').value.trim();
-  const center = state.map.getCenter();
 
   await poimod.createPoi({
     tripId: state.trip.id,
     name, category, notes,
-    lat: center.lat, lon: center.lng,
+    lat: state.pendingPoiLatLng.lat, lon: state.pendingPoiLatLng.lon,
     photoFiles: state.pendingPhotoFiles,
   });
 
+  state.pendingPoiLatLng = null;
   document.getElementById('poi-dialog').close();
   toast('POI saved');
   await loadTripData();

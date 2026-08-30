@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>luxtrail</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#1a2e22">
@@ -40,6 +40,7 @@
   <div id="status-bar">
     <div class="card" id="gps-status">GPS: off</div>
     <div class="card hidden" id="off-track-warning">Off track</div>
+    <button class="icon-btn hidden" id="btn-recenter" title="Recenter and follow">🎯</button>
     <button class="fab" id="btn-locate">Locate me</button>
   </div>
 
@@ -108,6 +109,8 @@
     </select>
     <label for="poi-notes">Notes</label>
     <textarea id="poi-notes" rows="2" placeholder="Optional"></textarea>
+    <div class="hint" id="poi-coords"></div>
+    <button type="button" class="btn" id="btn-use-gps">Use my current GPS position</button>
     <label>Photos</label>
     <button type="button" class="btn" id="btn-attach-photos">Attach photos</button>
     <div id="poi-photo-preview" class="photo-preview"></div>

@@ -38,7 +38,7 @@ header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 14px;
+  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
   z-index: 500;
@@ -93,14 +93,18 @@ header h1 span { color: var(--accent); }
 
 #status-bar {
   position: absolute;
-  bottom: 14px;
-  left: 14px;
-  right: 14px;
+  bottom: calc(14px + env(safe-area-inset-bottom));
+  left: calc(14px + env(safe-area-inset-left));
+  right: calc(14px + env(safe-area-inset-right));
   z-index: 400;
   display: flex;
   gap: 8px;
   align-items: flex-end;
   pointer-events: none;
+}
+
+.leaflet-container.placing-poi {
+  cursor: crosshair;
 }
 
 #status-bar > * { pointer-events: auto; }
@@ -224,7 +228,7 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
 .settings-body { overflow-y: auto; flex: 1; padding: 12px 14px; }
 .settings-body h3 { font-size: 13px; margin: 4px 0; color: var(--text-dim); }
 .settings-body .divider { border-top: 1px solid var(--line); margin: 14px 0; }
-.settings-body .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+.hint, .settings-body .hint { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
 .settings-body .btn { width: 100%; margin-top: 10px; }
 
 .list-item {
@@ -283,7 +287,7 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
   border-top: 1px solid var(--line);
   border-radius: 14px 14px 0 0;
   z-index: 550;
-  padding: 10px 14px 16px;
+  padding: 10px 14px calc(16px + env(safe-area-inset-bottom));
 }
 
 .sheet-header {
