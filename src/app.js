@@ -784,6 +784,7 @@ function wireUi() {
       toast('GPS tracking on');
     } else {
       state.gps.stop();
+      state.lastPosition = null; // stale position must never be mistaken for "current" later
       recenterBtn.classList.add('hidden');
       document.getElementById('gps-status').textContent = 'GPS: off';
       document.getElementById('gps-status').classList.remove('live');
