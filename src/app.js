@@ -256,7 +256,11 @@ function setActiveTrack(track) {
 }
 
 function renderMapLayers() {
-  state.trackLayers = mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, setActiveTrack);
+  const selectTrack = (track) => {
+    if (state.placingPoi || state.measuringSegment) return; // a tap right now means place-POI or pick-a-point, not switch tracks
+    setActiveTrack(track);
+  };
+  state.trackLayers = mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, selectTrack);
   mapmod.drawWaypoints(state.map, state.groups.waypoints, state.waypoints);
   mapmod.drawPois(state.map, state.groups.pois, state.pois, openPoiView);
 }

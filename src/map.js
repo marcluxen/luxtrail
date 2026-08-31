@@ -45,7 +45,7 @@ export function drawTracks(map, group, tracks, activeTrackId, onSelect) {
       weight: isActive ? 5 : 3,
       opacity: isActive ? 0.95 : 0.55,
     });
-    if (onSelect) line.on('click', () => onSelect(t));
+    if (!isActive && onSelect) line.on('click', () => onSelect(t));
     group.addLayer(line);
     layers.set(t.id, line);
   }
