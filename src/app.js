@@ -297,14 +297,12 @@ async function loadTripData() {
   state.pois = await poimod.poisForTrip(tripId);
   state.dayTrips = await db.byIndex('dayTrips', 'tripId', tripId);
 
-  // Restore whichever track was explicitly locked for this trip, if it
-  // still exists; otherwise there's nothing locked - viewport decides
-  // what's visible. A single track is never ambiguous, so lock to it.
+  // Only ever locked by an explicit action (tapping a track). Never
+  // auto-selected just because it's the only one - import is storage, not
+  // selection, full stop.
   const lockedId = state.trip.activeTrackId;
   const stillExists = lockedId && state.tracks.some((t) => t.id === lockedId);
-  state.activeTrack = stillExists
-    ? state.tracks.find((t) => t.id === lockedId)
-    : (state.tracks.length === 1 ? state.tracks[0] : null);
+  state.activeTrack = stillExists ? state.tracks.find((t) => t.id === lockedId) : null;
 
   const combinedPoints = [
     ...state.waypoints.map((w) => ({ id: w.id, name: w.name, lat: w.lat, lon: w.lon })),
@@ -1008,28 +1006,23 @@ async function savePoiFromDialog() {
 async function importGpxFile(file) {
   const text = await file.text();
   const { tracks, waypoints } = parseGpx(text);
-  const newTrackIds = [];
   for (const t of tracks) {
-    const id = newId();
-    newTrackIds.push(id);
-    await db.put('tracks', { id, tripId: state.trip.id, name: t.name, points: t.points });
+    await db.put('tracks', { id: newId(), tripId: state.trip.id, name: t.name, points: t.points });
   }
   for (const w of waypoints) {
     await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
   }
-  return { trackCount: tracks.length, waypointCount: waypoints.length, newTrackIds };
+  return { trackCount: tracks.length, waypointCount: waypoints.length };
 }
 
 async function handleGpxFiles(files) {
   let totalTracks = 0, totalWaypoints = 0, failed = 0;
-  const allNewTrackIds = [];
 
   for (const file of files) {
     try {
       const result = await importGpxFile(file);
       totalTracks += result.trackCount;
       totalWaypoints += result.waypointCount;
-      allNewTrackIds.push(...result.newTrackIds);
     } catch (err) {
       failed++;
     }
@@ -1042,24 +1035,11 @@ async function handleGpxFiles(files) {
 
   toast(`Loaded ${totalTracks} track(s), ${totalWaypoints} waypoint(s)` + (failed ? ` — ${failed} file(s) failed` : ''));
 
-  // Importing always shows you what you just loaded: drop any locked track
-  // and move the map to cover everything just imported together, rather
-  // than silently staying zoomed on old data or jumping to only the last file.
-  if (allNewTrackIds.length) {
-    state.trip.activeTrackId = null;
-    await db.put('trips', state.trip);
-  }
+  // Importing only stores data - it never touches the map. Whatever's
+  // currently shown (locked track, or the current view) stays exactly as
+  // it was. The new tracks just become available in the list until you
+  // deliberately pick one to walk.
   await loadTripData();
-
-  if (allNewTrackIds.length) {
-    const newLatLngs = allNewTrackIds
-      .map((id) => state.tracks.find((t) => t.id === id))
-      .filter(Boolean)
-      .flatMap((t) => t.points.map((p) => [p.lat, p.lon]));
-    if (newLatLngs.length) state.map.fitBounds(newLatLngs, { padding: [30, 30] });
-  } else {
-    fitToSensibleDefault();
-  }
 }
 
 init();
