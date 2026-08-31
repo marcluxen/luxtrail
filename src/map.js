@@ -66,7 +66,7 @@ export function showOnlyTrack(group, trackLayers, activeTrackId) {
   group.clearLayers();
   const entry = trackLayers.get(activeTrackId);
   if (!entry) return;
-  entry.line.setStyle({ color: '#e07a3f', weight: 5, opacity: 0.95 });
+  entry.line.setStyle({ color: '#9333ea', weight: 5, opacity: 0.95 });
   group.addLayer(entry.line);
   entry.line.bringToFront();
 }
