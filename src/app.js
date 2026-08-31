@@ -231,6 +231,33 @@ function clearSegment() {
   updateElevationPanel();
 }
 
+async function saveSegmentAsTrack() {
+  if (state.segmentStartIdx == null || state.segmentEndIdx == null || !state.activeTrack) return;
+  const lo = Math.min(state.segmentStartIdx, state.segmentEndIdx);
+  const hi = Math.max(state.segmentStartIdx, state.segmentEndIdx);
+  const points = state.activeTrack.points.slice(lo, hi + 1);
+  if (points.length < 2) { toast('Segment too short to save'); return; }
+
+  const defaultName = `Day trip — ${new Date().toLocaleDateString()}`;
+  const name = await promptDialog('Name this day trip', defaultName);
+  if (!name) return;
+
+  const newTrack = { id: newId(), tripId: state.trip.id, name, points };
+  await db.put('tracks', newTrack);
+
+  clearSegment();
+  await loadTripData();
+
+  // Land right where you asked for: locked onto the new day trip, zoomed
+  // in, with all its own info showing - not back at the full route.
+  const saved = state.tracks.find((t) => t.id === newTrack.id);
+  if (saved) {
+    await setActiveTrack(saved);
+    fitToTrack(saved);
+  }
+  toast('Saved as its own track');
+}
+
 async function loadTripData() {
   const tripId = state.trip.id;
   state.tracks = await db.byIndex('tracks', 'tripId', tripId);
@@ -391,15 +418,18 @@ function updateElevationPanel() {
   const panel = document.getElementById('elevation-panel');
   const track = state.activeTrack;
   const clearBtn = document.getElementById('btn-clear-segment');
+  const saveBtn = document.getElementById('btn-save-segment');
 
   if (!track || track.points.length < 2) {
     panel.classList.add('hidden');
     clearBtn.classList.add('hidden');
+    saveBtn.classList.add('hidden');
     return;
   }
 
   const hasSegment = state.segmentStartIdx != null && state.segmentEndIdx != null;
   clearBtn.classList.toggle('hidden', !hasSegment);
+  saveBtn.classList.toggle('hidden', !hasSegment);
 
   let points, profile, title;
   if (hasSegment) {
@@ -730,6 +760,7 @@ function wireUi() {
   document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
   document.getElementById('btn-measure').addEventListener('click', () => setMeasuringMode(!state.measuringSegment));
   document.getElementById('btn-clear-segment').addEventListener('click', clearSegment);
+  document.getElementById('btn-save-segment').addEventListener('click', saveSegmentAsTrack);
 
   document.getElementById('btn-attach-photos').addEventListener('click', () => document.getElementById('photo-input').click());
   document.getElementById('photo-input').addEventListener('change', (e) => {
