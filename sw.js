@@ -1,4 +1,4 @@
-const APP_CACHE = 'luxtrail-app-v25';
+const APP_CACHE = 'luxtrail-app-v26';
 const TILE_CACHE = 'luxtrail-tiles-v1';
 
 const APP_SHELL = [
@@ -13,6 +13,7 @@ const APP_SHELL = [
   './src/gpx.js',
   './src/export.js',
   './src/geo.js',
+  './src/exif.js',
   './src/tiles.js',
   './src/gps.js',
   './src/recorder.js',
