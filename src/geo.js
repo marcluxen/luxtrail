@@ -68,23 +68,6 @@ export function nearestPointIndex(latlng, points) {
   return idx;
 }
 
-// One-off lookup by time instead of distance - used to place a photo on
-// the route using its own capture timestamp rather than GPS/manual tap.
-// Skips any point with no time data (e.g. a pre-planned GPX with no
-// timestamps at all - nothing to match against there).
-export function nearestPointByTime(targetTime, points) {
-  let min = Infinity, best = null;
-  const targetMs = targetTime.getTime();
-  for (const p of points) {
-    if (!p.time) continue;
-    const t = new Date(p.time).getTime();
-    if (Number.isNaN(t)) continue;
-    const diff = Math.abs(t - targetMs);
-    if (diff < min) { min = diff; best = p; }
-  }
-  return best ? { point: best, diffMs: min } : null;
-}
-
 export function trackStats(points) {
   let distance = 0, gain = 0, loss = 0;
   const cumulative = [0];

@@ -8,8 +8,7 @@ import { searchPlace } from './geocode.js';
 import * as poimod from './poi.js';
 import * as tilesmod from './tiles.js';
 import { computeProfile, renderElevationSvg, formatDistance, formatDuration } from './elevation.js';
-import { nearestPointIndex, trackStats, nearestPointByTime } from './geo.js';
-import { readPhotoCaptureTime } from './exif.js';
+import { nearestPointIndex, trackStats } from './geo.js';
 import { buildTripZip, downloadZipFile } from './export.js';
 import { toast, promptDialog, renderPhotoPreviews, listItem, togglePanel } from './ui.js';
 
@@ -835,13 +834,6 @@ function wireUi() {
     e.target.value = '';
     if (file) await capturePhotoNow(file);
   });
-  document.getElementById('btn-photo-poi').addEventListener('click', () => document.getElementById('import-photo-input').click());
-  document.getElementById('import-photo-input').addEventListener('change', async (e) => {
-    const files = Array.from(e.target.files);
-    e.target.value = '';
-    if (!files.length) return;
-    await startPoiFromPhoto(files);
-  });
   document.getElementById('btn-measure').addEventListener('click', () => setMeasuringMode(!state.measuringSegment));
   document.getElementById('btn-clear-segment').addEventListener('click', clearSegment);
   document.getElementById('btn-save-segment').addEventListener('click', saveDayTrip);
@@ -936,39 +928,6 @@ function wireUi() {
 // active track's timestamped points - no map tap, no GPS needed. Falls
 // back to leaving the location unset (GPS or a tap still work from there)
 // if there's no time on the photo or no timestamped track to match against.
-async function startPoiFromPhoto(files) {
-  state.pendingPhotoFiles = files;
-  const previewContainer = document.getElementById('poi-photo-preview');
-  previewContainer.innerHTML = '';
-  for (const f of files) {
-    const img = document.createElement('img');
-    img.src = URL.createObjectURL(f);
-    previewContainer.appendChild(img);
-  }
-
-  state.pendingPoiLatLng = null;
-  let coordsLabel = 'No location yet - use GPS below, or pick a photo with a matching timestamp';
-
-  const captureTime = await readPhotoCaptureTime(files[0]);
-  if (!captureTime) {
-    toast("Couldn't read a timestamp from that photo");
-  } else if (!state.activeTrack || !state.activeTrack.points.some((p) => p.time)) {
-    toast('No timestamped route loaded to match against');
-  } else {
-    const match = nearestPointByTime(captureTime, state.activeTrack.points);
-    if (match) {
-      state.pendingPoiLatLng = { lat: match.point.lat, lon: match.point.lon };
-      const minutesOff = Math.round(match.diffMs / 60000);
-      coordsLabel = `${match.point.lat.toFixed(5)}, ${match.point.lon.toFixed(5)} (matched from photo time, ${minutesOff}m off)`;
-      toast(`Location matched from photo time (±${minutesOff}m)`);
-    } else {
-      toast('No timestamped points on the route to match against');
-    }
-  }
-
-  openPoiDialog({ keepPhotos: true, coordsLabel });
-}
-
 // Takes a photo right now with the device camera and pins it at your
 // current live position - the moment you press the shutter is the moment
 // you're standing there, no matching needed.
