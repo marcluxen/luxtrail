@@ -1,4 +1,4 @@
-const APP_CACHE = 'luxtrail-app-v30';
+const APP_CACHE = 'luxtrail-app-v31';
 const TILE_CACHE = 'luxtrail-tiles-v1';
 
 const APP_SHELL = [

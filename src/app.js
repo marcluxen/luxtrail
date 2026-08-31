@@ -96,7 +96,6 @@ async function init() {
     }
   });
 
-  populateTripSelect();
   await loadTripData();
   fitToSensibleDefault();
   populateSourceSelect(sources, source.id);
@@ -561,22 +560,6 @@ function updateElevationPanel() {
   `;
 }
 
-function populateTripSelect() {
-  const sel = document.getElementById('trip-select');
-  sel.innerHTML = '';
-  for (const t of state.trips) {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = t.name;
-    if (t.id === state.trip.id) opt.selected = true;
-    sel.appendChild(opt);
-  }
-  const newOpt = document.createElement('option');
-  newOpt.value = '__new__';
-  newOpt.textContent = '+ New trip';
-  sel.appendChild(newOpt);
-}
-
 function populateSourceSelect(sources, activeId) {
   const sel = document.getElementById('source-select');
   sel.innerHTML = '';
@@ -893,26 +876,6 @@ function wireUi() {
     document.getElementById('poi-dialog').close();
   });
   document.getElementById('poi-save').addEventListener('click', savePoiFromDialog);
-
-  document.getElementById('trip-select').addEventListener('change', async (e) => {
-    const val = e.target.value;
-    if (val === '__new__') {
-      const name = await promptDialog('Trip name');
-      if (!name) { populateTripSelect(); return; }
-      const trip = { id: newId(), name, createdAt: Date.now() };
-      await db.put('trips', trip);
-      state.trips.push(trip);
-      state.trip = trip;
-    } else {
-      state.trip = state.trips.find((t) => t.id === val);
-    }
-    await db.setSetting('currentTripId', state.trip.id);
-    populateTripSelect();
-    state.listFilter = '';
-    document.getElementById('list-filter').value = '';
-    await loadTripData();
-    fitToSensibleDefault();
-  });
 
   document.getElementById('source-select').addEventListener('change', async (e) => {
     const sources = await tilesmod.listTileSources();
