@@ -337,6 +337,11 @@ async function setActiveTrack(track) {
   state.activeTrack = track;
   state.trip.activeTrackId = track ? track.id : null;
   await db.put('trips', state.trip);
+  if (track) {
+    track.lastWalkedAt = Date.now();
+    const { stats, ...toSave } = track; // stats is a derived/cached field, don't persist it
+    await db.put('tracks', toSave);
+  }
   state.gps.setActiveTrack(track ? track.points : null);
   mapmod.showOnlyTrack(state.groups.track, state.trackLayers, track.id);
   clearSegment();
@@ -479,11 +484,13 @@ function renderTrackSelectPanel() {
   }
 
   for (const t of state.tracks) {
-    const meta = t.stats ? formatDistance(t.stats.stats.distance) : `${t.points.length} pts`;
+    const dist = t.stats ? formatDistance(t.stats.stats.distance) : `${t.points.length} pts`;
+    const imported = t.createdAt ? new Date(t.createdAt).toLocaleDateString() : 'unknown date';
+    const lastWalked = t.lastWalkedAt ? `walked ${new Date(t.lastWalkedAt).toLocaleDateString()}` : 'not walked yet';
     const isLocked = state.activeTrack && state.activeTrack.id === t.id;
     container.appendChild(listItem({
       title: (isLocked ? '● ' : '') + t.name,
-      meta: isLocked ? meta + ' · walking this one, tap to show all' : meta,
+      meta: `${dist} · imported ${imported} · ${lastWalked}` + (isLocked ? ' · walking now, tap to show all' : ''),
       kindLabel: isLocked ? 'Walking' : 'Track',
       kindClass: isLocked ? 'poi' : '',
       onClick: async () => {
@@ -736,7 +743,7 @@ async function toggleRecording() {
     if (points.length > 1) {
       const defaultName = `Recorded ${new Date().toLocaleDateString()}`;
       const name = (await promptDialog('Track name', defaultName)) || defaultName;
-      await db.put('tracks', { id: newId(), tripId: state.trip.id, name, points });
+      await db.put('tracks', { id: newId(), tripId: state.trip.id, name, points, createdAt: Date.now() });
       toast('Track saved');
       await loadTripData();
     } else {
@@ -1048,7 +1055,7 @@ async function importGpxFile(file) {
   const text = await file.text();
   const { tracks, waypoints } = parseGpx(text);
   for (const t of tracks) {
-    await db.put('tracks', { id: newId(), tripId: state.trip.id, name: t.name, points: t.points });
+    await db.put('tracks', { id: newId(), tripId: state.trip.id, name: t.name, points: t.points, createdAt: Date.now() });
   }
   for (const w of waypoints) {
     await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
