@@ -1029,7 +1029,10 @@ async function handleGpxFiles(files) {
     return;
   }
 
-  toast(`Loaded ${totalTracks} track(s), ${totalWaypoints} waypoint(s)` + (failed ? ` — ${failed} file(s) failed` : ''));
+  const parts = [];
+  if (totalTracks) parts.push(`${totalTracks} track${totalTracks === 1 ? '' : 's'}`);
+  if (totalWaypoints) parts.push(`${totalWaypoints} waypoint${totalWaypoints === 1 ? '' : 's'}`);
+  toast(`Loaded ${parts.join(', ')}` + (failed ? ` — ${failed} file(s) failed` : ''));
 
   // Importing only stores data - it never touches the map. Whatever's
   // currently shown (locked track, or the current view) stays exactly as
