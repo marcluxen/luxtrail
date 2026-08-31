@@ -466,6 +466,45 @@ function renderList() {
   }
 }
 
+function renderTrackSelectPanel() {
+  const container = document.getElementById('track-select-items');
+  container.innerHTML = '';
+
+  if (!state.tracks.length) {
+    const empty = document.createElement('div');
+    empty.className = 'empty-hint';
+    empty.textContent = 'No tracks loaded yet. Import a GPX first.';
+    container.appendChild(empty);
+    return;
+  }
+
+  for (const t of state.tracks) {
+    const meta = t.stats ? formatDistance(t.stats.stats.distance) : `${t.points.length} pts`;
+    const isLocked = state.activeTrack && state.activeTrack.id === t.id;
+    container.appendChild(listItem({
+      title: (isLocked ? '● ' : '') + t.name,
+      meta: isLocked ? meta + ' · walking this one, tap to show all' : meta,
+      kindLabel: isLocked ? 'Walking' : 'Track',
+      kindClass: isLocked ? 'poi' : '',
+      onClick: async () => {
+        if (isLocked) {
+          await unlockTrack();
+        } else {
+          await setActiveTrack(t);
+          fitToTrack(t);
+        }
+        togglePanel('track-select-panel', false);
+      },
+      onDelete: async () => {
+        if (!confirm(`Delete track "${t.name}"?`)) return;
+        await db.delete('tracks', t.id);
+        await loadTripData();
+        renderTrackSelectPanel();
+      },
+    }));
+  }
+}
+
 function updateElevationPanel() {
   const panel = document.getElementById('elevation-panel');
   const track = state.activeTrack;
@@ -715,6 +754,8 @@ function wireUi() {
   });
 
   document.getElementById('btn-list').addEventListener('click', () => togglePanel('list-panel'));
+  document.getElementById('btn-select-track').addEventListener('click', () => { togglePanel('track-select-panel'); renderTrackSelectPanel(); });
+  document.getElementById('btn-close-track-select').addEventListener('click', () => togglePanel('track-select-panel', false));
   document.getElementById('btn-close-list').addEventListener('click', () => togglePanel('list-panel', false));
   document.getElementById('btn-export-gpx').addEventListener('click', () => {
     if (!state.tracks.length && !state.waypoints.length) { toast('Nothing to export'); return; }

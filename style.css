@@ -196,7 +196,7 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
 .leaflet-popup-tip { background: var(--panel); }
 .leaflet-popup-content { font-size: 13px; }
 
-#list-panel, #settings-panel {
+#list-panel, #settings-panel, #track-select-panel {
   position: absolute;
   top: 0;
   right: 0;
@@ -211,7 +211,7 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
   flex-direction: column;
 }
 
-#list-panel.open, #settings-panel.open { transform: translateX(0); }
+#list-panel.open, #settings-panel.open, #track-select-panel.open { transform: translateX(0); }
 
 .panel-header {
   display: flex;
@@ -223,7 +223,7 @@ button.btn.danger { color: var(--danger); border-color: var(--danger); }
 
 .panel-header h2 { font-size: 14px; margin: 0; }
 
-#list-items { overflow-y: auto; flex: 1; padding: 8px; }
+#list-items, #track-select-items { overflow-y: auto; flex: 1; padding: 8px; }
 
 .settings-body { overflow-y: auto; flex: 1; padding: 12px 14px; }
 .settings-body h3 { font-size: 13px; margin: 4px 0; color: var(--text-dim); }

@@ -27,6 +27,7 @@
       <button class="icon-btn" id="btn-elevation" title="Elevation profile">⛰</button>
       <button class="icon-btn" id="btn-share-location" title="Share my location">📤</button>
       <button class="icon-btn" id="btn-list" title="Tracks & Points">☰</button>
+      <button class="icon-btn" id="btn-select-track" title="Select a track to walk">🗺</button>
       <button class="icon-btn" id="btn-search-toggle" title="Search a place">🔎</button>
       <button class="icon-btn" id="btn-settings" title="Map sources & offline">⚙</button>
     </div>
@@ -73,6 +74,14 @@
     </div>
     <input type="text" id="list-filter" placeholder="Filter by name or category…">
     <div id="list-items"></div>
+  </div>
+
+  <div id="track-select-panel">
+    <div class="panel-header">
+      <h2>Select a track to walk</h2>
+      <button class="icon-btn" id="btn-close-track-select">✕</button>
+    </div>
+    <div id="track-select-items"></div>
   </div>
 
   <div id="settings-panel">
