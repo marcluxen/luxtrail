@@ -828,6 +828,12 @@ function wireUi() {
   });
 
   document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
+  document.getElementById('btn-camera-poi').addEventListener('click', () => document.getElementById('camera-poi-input').click());
+  document.getElementById('camera-poi-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (file) await capturePhotoNow(file);
+  });
   document.getElementById('btn-photo-poi').addEventListener('click', () => document.getElementById('import-photo-input').click());
   document.getElementById('import-photo-input').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
@@ -962,8 +968,42 @@ async function startPoiFromPhoto(files) {
   openPoiDialog({ keepPhotos: true, coordsLabel });
 }
 
-function openPoiDialog({ keepPhotos = false, coordsLabel = null } = {}) {
-  document.getElementById('poi-name').value = '';
+// Takes a photo right now with the device camera and pins it at your
+// current live position - the moment you press the shutter is the moment
+// you're standing there, no matching needed.
+async function capturePhotoNow(file) {
+  toast('Getting your location…');
+  let pos = state.lastPosition;
+  if (!pos) {
+    try {
+      const fix = await new Promise((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 })
+      );
+      pos = { lat: fix.coords.latitude, lon: fix.coords.longitude };
+    } catch (err) {
+      toast('Could not get a GPS fix');
+      return;
+    }
+  }
+
+  state.pendingPoiLatLng = pos;
+  state.pendingPhotoFiles = [file];
+  const previewContainer = document.getElementById('poi-photo-preview');
+  previewContainer.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = URL.createObjectURL(file);
+  previewContainer.appendChild(img);
+
+  const timeLabel = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  openPoiDialog({
+    keepPhotos: true,
+    coordsLabel: `${pos.lat.toFixed(5)}, ${pos.lon.toFixed(5)} (your location, just now)`,
+    defaultName: `Photo — ${timeLabel}`,
+  });
+}
+
+function openPoiDialog({ keepPhotos = false, coordsLabel = null, defaultName = '' } = {}) {
+  document.getElementById('poi-name').value = defaultName;
   document.getElementById('poi-category').value = 'water';
   document.getElementById('poi-notes').value = '';
   if (!keepPhotos) {
