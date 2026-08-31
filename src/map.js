@@ -102,8 +102,17 @@ function escapeHtml(s) {
 // Draws the highlighted sub-section between two picked points on the
 // active track, plus A/B markers. group should be a dedicated layer group
 // so it can be cleared independently of the main track/waypoint/poi layers.
-export function drawSegmentSelection(map, group, points, startIdx, endIdx) {
+export function drawSegmentSelection(map, group, points, startIdx, endIdx, rawA, rawB) {
   group.clearLayers();
+
+  function markRawTap(latlng) {
+    L.circleMarker([latlng.lat, latlng.lon], {
+      radius: 5, color: '#fff', weight: 2, fillColor: '#c65b4a', fillOpacity: 1,
+    }).addTo(group).bindTooltip('tapped here');
+  }
+  if (rawA) markRawTap(rawA);
+  if (rawB) markRawTap(rawB);
+
   if (startIdx == null) return;
 
   const a = points[startIdx];

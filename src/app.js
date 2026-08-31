@@ -35,6 +35,8 @@ const state = {
   measuringSegment: false,
   segmentStartIdx: null,
   segmentEndIdx: null,
+  segmentRawA: null,
+  segmentRawB: null,
   segmentGroup: null,
   pendingPhotoFiles: [],
   recorder: new TrackRecorder(),
@@ -185,6 +187,8 @@ function setMeasuringMode(on) {
     if (!state.activeTrack) { toast('Load or select a track first'); state.measuringSegment = false; document.getElementById('btn-measure').classList.remove('active'); return; }
     state.segmentStartIdx = null;
     state.segmentEndIdx = null;
+    state.segmentRawA = null;
+    state.segmentRawB = null;
     state.segmentGroup.clearLayers();
     updateElevationPanel();
     toast('Tap two points on the route');
@@ -195,14 +199,16 @@ function pickSegmentPoint(latlng) {
   const idx = nearestPointIndex(latlng, state.activeTrack.points);
   if (state.segmentStartIdx == null) {
     state.segmentStartIdx = idx;
+    state.segmentRawA = latlng;
     toast('Start set — tap the end point');
   } else {
     state.segmentEndIdx = idx;
+    state.segmentRawB = latlng;
     setMeasuringModeOff();
     toast('Segment selected');
     document.getElementById('elevation-panel').classList.remove('hidden');
   }
-  mapmod.drawSegmentSelection(state.map, state.segmentGroup, state.activeTrack.points, state.segmentStartIdx, state.segmentEndIdx);
+  mapmod.drawSegmentSelection(state.map, state.segmentGroup, state.activeTrack.points, state.segmentStartIdx, state.segmentEndIdx, state.segmentRawA, state.segmentRawB);
   updateElevationPanel();
 }
 
@@ -215,6 +221,8 @@ function setMeasuringModeOff() {
 function clearSegment() {
   state.segmentStartIdx = null;
   state.segmentEndIdx = null;
+  state.segmentRawA = null;
+  state.segmentRawB = null;
   state.segmentGroup.clearLayers();
   updateElevationPanel();
 }
