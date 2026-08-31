@@ -29,40 +29,46 @@ export function setTileLayer(map, currentLayerRef, source) {
   currentLayerRef.source = source;
 }
 
-// Draws every track once (data actually changed - a trip load, or a track
-// added/removed). Returns a Map of id -> layer so the active track can be
-// switched later with a style change instead of rebuilding every polyline,
-// which matters once a track has tens of thousands of points.
-export function drawTracks(map, group, tracks, activeTrackId, onSelect) {
-  group.clearLayers();
+// Builds every track's line ONCE (expensive for a big track, so only done
+// when the actual data changes - an import or a delete), and its bounding
+// box alongside it. Viewport visibility only ever checks the cheap
+// precomputed box, never the raw points, so panning/zooming stays fast
+// even with a huge track loaded.
+export function buildTrackLayers(tracks, onSelect) {
   const layers = new Map();
   for (const t of tracks) {
     if (!t.points || t.points.length < 2) continue;
-    const isActive = t.id === activeTrackId;
     const latlngs = t.points.map((p) => [p.lat, p.lon]);
-    const line = L.polyline(latlngs, {
-      color: isActive ? '#e07a3f' : '#6b8f78',
-      weight: isActive ? 5 : 3,
-      opacity: isActive ? 0.95 : 0.55,
-    });
-    if (!isActive && onSelect) line.on('click', () => onSelect(t));
-    group.addLayer(line);
-    layers.set(t.id, line);
+    const line = L.polyline(latlngs, { color: '#6b8f78', weight: 4, opacity: 0.8 });
+    if (onSelect) line.on('click', () => onSelect(t));
+    layers.set(t.id, { line, bounds: line.getBounds() });
   }
   return layers;
 }
 
-// Cheap re-style when only the active track changes - no geometry rebuild.
-export function setActiveTrackStyle(trackLayers, activeTrackId) {
-  for (const [id, line] of trackLayers) {
-    const isActive = id === activeTrackId;
-    line.setStyle({
-      color: isActive ? '#e07a3f' : '#6b8f78',
-      weight: isActive ? 5 : 3,
-      opacity: isActive ? 0.95 : 0.55,
-    });
-    if (isActive) line.bringToFront();
+// No track locked: show whichever loaded tracks actually fall within the
+// current map view, recomputed on every pan/zoom. A track outside the
+// current view is left out entirely, not just dimmed.
+export function applyViewportVisibility(map, group, trackLayers) {
+  group.clearLayers();
+  const viewBounds = map.getBounds();
+  for (const [, { line, bounds }] of trackLayers) {
+    if (viewBounds.intersects(bounds)) {
+      line.setStyle({ color: '#6b8f78', weight: 4, opacity: 0.8 });
+      group.addLayer(line);
+    }
   }
+}
+
+// One track locked (walking it): show only that one, everywhere, ignoring
+// the current viewport entirely.
+export function showOnlyTrack(group, trackLayers, activeTrackId) {
+  group.clearLayers();
+  const entry = trackLayers.get(activeTrackId);
+  if (!entry) return;
+  entry.line.setStyle({ color: '#e07a3f', weight: 5, opacity: 0.95 });
+  group.addLayer(entry.line);
+  entry.line.bringToFront();
 }
 
 export function drawWaypoints(map, group, waypoints, onClick) {

@@ -79,6 +79,9 @@ async function init() {
   state.gps = new GpsTracker({ onPosition: handlePosition, onError: handleGpsError });
 
   state.map.on('dragstart', () => { state.followMode = false; });
+  state.map.on('moveend', () => {
+    if (!state.activeTrack) mapmod.applyViewportVisibility(state.map, state.groups.track, state.trackLayers);
+  });
   state.map.on('click', (e) => {
     if (state.placingPoi) {
       state.pendingPoiLatLng = { lat: e.latlng.lat, lon: e.latlng.lng };
@@ -93,6 +96,7 @@ async function init() {
 
   populateTripSelect();
   await loadTripData();
+  fitToSensibleDefault();
   populateSourceSelect(sources, source.id);
   wireUi();
 }
@@ -235,7 +239,15 @@ async function loadTripData() {
   }
   state.waypoints = await db.byIndex('waypoints', 'tripId', tripId);
   state.pois = await poimod.poisForTrip(tripId);
-  state.activeTrack = state.tracks[0] || null;
+
+  // Restore whichever track was explicitly locked for this trip, if it
+  // still exists; otherwise there's nothing locked - viewport decides
+  // what's visible. A single track is never ambiguous, so lock to it.
+  const lockedId = state.trip.activeTrackId;
+  const stillExists = lockedId && state.tracks.some((t) => t.id === lockedId);
+  state.activeTrack = stillExists
+    ? state.tracks.find((t) => t.id === lockedId)
+    : (state.tracks.length === 1 ? state.tracks[0] : null);
 
   const combinedPoints = [
     ...state.waypoints.map((w) => ({ id: w.id, name: w.name, lat: w.lat, lon: w.lon })),
@@ -247,19 +259,40 @@ async function loadTripData() {
   renderMapLayers();
   renderList();
   updateElevationPanel();
+}
 
+function fitToSensibleDefault() {
   if (state.activeTrack && state.activeTrack.points.length) {
-    const latlngs = state.activeTrack.points.map((p) => [p.lat, p.lon]);
-    state.map.fitBounds(latlngs, { padding: [30, 30] });
+    fitToTrack(state.activeTrack);
+  } else if (state.tracks.length) {
+    const allLatLngs = state.tracks.flatMap((t) => t.points.map((p) => [p.lat, p.lon]));
+    if (allLatLngs.length) state.map.fitBounds(allLatLngs, { padding: [30, 30] });
   } else if (state.pois.length) {
     state.map.setView([state.pois[0].lat, state.pois[0].lon], 14);
   }
 }
 
-function setActiveTrack(track) {
+function fitToTrack(track) {
+  if (!track || track.points.length < 2) return;
+  const latlngs = track.points.map((p) => [p.lat, p.lon]);
+  state.map.fitBounds(latlngs, { padding: [30, 30] });
+}
+
+async function setActiveTrack(track) {
   state.activeTrack = track;
+  state.trip.activeTrackId = track ? track.id : null;
+  await db.put('trips', state.trip);
   state.gps.setActiveTrack(track ? track.points : null);
-  mapmod.setActiveTrackStyle(state.trackLayers, track ? track.id : null);
+  mapmod.showOnlyTrack(state.groups.track, state.trackLayers, track.id);
+  clearSegment();
+}
+
+async function unlockTrack() {
+  state.activeTrack = null;
+  state.trip.activeTrackId = null;
+  await db.put('trips', state.trip);
+  state.gps.setActiveTrack(null);
+  mapmod.applyViewportVisibility(state.map, state.groups.track, state.trackLayers);
   clearSegment();
 }
 
@@ -268,7 +301,12 @@ function renderMapLayers() {
     if (state.placingPoi || state.measuringSegment) return; // a tap right now means place-POI or pick-a-point, not switch tracks
     setActiveTrack(track);
   };
-  state.trackLayers = mapmod.drawTracks(state.map, state.groups.track, state.tracks, state.activeTrack ? state.activeTrack.id : null, selectTrack);
+  state.trackLayers = mapmod.buildTrackLayers(state.tracks, selectTrack);
+  if (state.activeTrack) {
+    mapmod.showOnlyTrack(state.groups.track, state.trackLayers, state.activeTrack.id);
+  } else {
+    mapmod.applyViewportVisibility(state.map, state.groups.track, state.trackLayers);
+  }
   mapmod.drawWaypoints(state.map, state.groups.waypoints, state.waypoints);
   mapmod.drawPois(state.map, state.groups.pois, state.pois, openPoiView);
 }
@@ -297,14 +335,18 @@ function renderList() {
 
   for (const t of tracks) {
     const meta = t.stats ? formatDistance(t.stats.stats.distance) : `${t.points.length} pts`;
+    const isLocked = state.activeTrack && state.activeTrack.id === t.id;
     container.appendChild(listItem({
-      title: t.name,
-      meta,
+      title: (isLocked ? '● ' : '') + t.name,
+      meta: isLocked ? meta + ' · walking this one, tap to show all' : meta,
       kindLabel: 'Track',
-      onClick: () => {
-        setActiveTrack(t);
-        const latlngs = t.points.map((p) => [p.lat, p.lon]);
-        state.map.fitBounds(latlngs, { padding: [30, 30] });
+      onClick: async () => {
+        if (isLocked) {
+          await unlockTrack();
+        } else {
+          await setActiveTrack(t);
+          fitToTrack(t);
+        }
         togglePanel('list-panel', false);
       },
       onDelete: async () => {
@@ -730,6 +772,7 @@ function wireUi() {
     state.listFilter = '';
     document.getElementById('list-filter').value = '';
     await loadTripData();
+    fitToSensibleDefault();
   });
 
   document.getElementById('source-select').addEventListener('change', async (e) => {
@@ -835,14 +878,34 @@ async function handleGpxFile(file) {
       toast('No tracks or waypoints found in file');
       return;
     }
+    const newTrackIds = [];
     for (const t of tracks) {
-      await db.put('tracks', { id: newId(), tripId: state.trip.id, name: t.name, points: t.points });
+      const id = newId();
+      newTrackIds.push(id);
+      await db.put('tracks', { id, tripId: state.trip.id, name: t.name, points: t.points });
     }
     for (const w of waypoints) {
       await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
     }
     toast(`Loaded ${tracks.length} track(s), ${waypoints.length} waypoint(s)`);
+
+    // Importing always shows you what you just loaded: drop any locked
+    // track and move the map to the new one(s), rather than silently
+    // staying zoomed on unrelated older data with the new route off-screen.
+    if (newTrackIds.length) {
+      state.trip.activeTrackId = null;
+      await db.put('trips', state.trip);
+    }
     await loadTripData();
+    if (newTrackIds.length) {
+      const newLatLngs = newTrackIds
+        .map((id) => state.tracks.find((t) => t.id === id))
+        .filter(Boolean)
+        .flatMap((t) => t.points.map((p) => [p.lat, p.lon]));
+      if (newLatLngs.length) state.map.fitBounds(newLatLngs, { padding: [30, 30] });
+    } else {
+      fitToSensibleDefault();
+    }
   } catch (err) {
     toast('Failed to load GPX: ' + err.message);
   }
