@@ -1,5 +1,5 @@
 const DB_NAME = 'luxtrail';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbPromise = null;
 
@@ -32,6 +32,13 @@ function openDb() {
       }
       if (!db.objectStoreNames.contains('mapDownloads')) {
         db.createObjectStore('mapDownloads', { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains('dayTrips')) {
+        // Optional, lightweight: a name plus a start/end position within an
+        // existing track. Never a copy of its points - saving one is a
+        // convenience for prep, not required to measure or walk a segment.
+        const s = db.createObjectStore('dayTrips', { keyPath: 'id' });
+        s.createIndex('tripId', 'tripId');
       }
     };
     req.onsuccess = () => resolve(req.result);

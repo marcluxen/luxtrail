@@ -37,6 +37,7 @@ const state = {
   segmentEndIdx: null,
   segmentRawA: null,
   segmentRawB: null,
+  dayTrips: [],
   segmentGroup: null,
   pendingPhotoFiles: [],
   recorder: new TrackRecorder(),
@@ -211,6 +212,7 @@ function pickSegmentPoint(latlng) {
     setMeasuringModeOff();
     toast('Segment selected');
     document.getElementById('elevation-panel').classList.remove('hidden');
+    fitToSegment(); // always zoom in on the picked stretch, no saving required
   }
   mapmod.drawSegmentSelection(state.map, state.segmentGroup, state.activeTrack.points, state.segmentStartIdx, state.segmentEndIdx, state.segmentRawA, state.segmentRawB);
   updateElevationPanel();
@@ -229,33 +231,59 @@ function clearSegment() {
   state.segmentRawB = null;
   state.segmentGroup.clearLayers();
   updateElevationPanel();
+  if (state.activeTrack) fitToTrack(state.activeTrack); // back out to the full route
 }
 
-async function saveSegmentAsTrack() {
+function fitToSegment() {
   if (state.segmentStartIdx == null || state.segmentEndIdx == null || !state.activeTrack) return;
   const lo = Math.min(state.segmentStartIdx, state.segmentEndIdx);
   const hi = Math.max(state.segmentStartIdx, state.segmentEndIdx);
-  const points = state.activeTrack.points.slice(lo, hi + 1);
-  if (points.length < 2) { toast('Segment too short to save'); return; }
+  const latlngs = state.activeTrack.points.slice(lo, hi + 1).map((p) => [p.lat, p.lon]);
+  if (latlngs.length > 1) state.map.fitBounds(latlngs, { padding: [30, 30] });
+}
 
+// Optional: names the current selection so it can be reopened later. Just a
+// pointer (track + start/end index) - never a copy of the points.
+async function saveDayTrip() {
+  if (state.segmentStartIdx == null || state.segmentEndIdx == null || !state.activeTrack) return;
   const defaultName = `Day trip — ${new Date().toLocaleDateString()}`;
-  const name = await promptDialog('Name this day trip', defaultName);
+  const name = await promptDialog('Name this day trip (optional)', defaultName);
   if (!name) return;
 
-  const newTrack = { id: newId(), tripId: state.trip.id, name, points };
-  await db.put('tracks', newTrack);
+  await db.put('dayTrips', {
+    id: newId(),
+    tripId: state.trip.id,
+    trackId: state.activeTrack.id,
+    name,
+    startIdx: state.segmentStartIdx,
+    endIdx: state.segmentEndIdx,
+    createdAt: Date.now(),
+  });
+  state.dayTrips = await db.byIndex('dayTrips', 'tripId', state.trip.id);
+  renderList();
+  toast('Saved for later');
+}
 
-  clearSegment();
-  await loadTripData();
+// Reopens a saved day trip: locks the referenced track, restores its
+// segment selection, and zooms to just that stretch.
+async function openDayTrip(dt) {
+  const track = state.tracks.find((t) => t.id === dt.trackId);
+  if (!track) { toast('The original route for this day trip is gone'); return; }
 
-  // Land right where you asked for: locked onto the new day trip, zoomed
-  // in, with all its own info showing - not back at the full route.
-  const saved = state.tracks.find((t) => t.id === newTrack.id);
-  if (saved) {
-    await setActiveTrack(saved);
-    fitToTrack(saved);
-  }
-  toast('Saved as its own track');
+  state.activeTrack = track;
+  state.trip.activeTrackId = track.id;
+  await db.put('trips', state.trip);
+  state.gps.setActiveTrack(track.points);
+  mapmod.showOnlyTrack(state.groups.track, state.trackLayers, track.id);
+
+  state.segmentStartIdx = dt.startIdx;
+  state.segmentEndIdx = dt.endIdx;
+  state.segmentRawA = null;
+  state.segmentRawB = null;
+  mapmod.drawSegmentSelection(state.map, state.segmentGroup, track.points, dt.startIdx, dt.endIdx, null, null);
+  updateElevationPanel();
+  fitToSegment();
+  togglePanel('list-panel', false);
 }
 
 async function loadTripData() {
@@ -266,6 +294,7 @@ async function loadTripData() {
   }
   state.waypoints = await db.byIndex('waypoints', 'tripId', tripId);
   state.pois = await poimod.poisForTrip(tripId);
+  state.dayTrips = await db.byIndex('dayTrips', 'tripId', tripId);
 
   // Restore whichever track was explicitly locked for this trip, if it
   // still exists; otherwise there's nothing locked - viewport decides
@@ -351,8 +380,9 @@ function renderList() {
   const tracks = state.tracks.filter((t) => matchesFilter(t.name));
   const waypoints = state.waypoints.filter((w) => matchesFilter(w.name));
   const pois = state.pois.filter((p) => matchesFilter(p.name, p.category));
+  const dayTrips = state.dayTrips.filter((d) => matchesFilter(d.name));
 
-  if (!tracks.length && !waypoints.length && !pois.length) {
+  if (!tracks.length && !waypoints.length && !pois.length && !dayTrips.length) {
     const empty = document.createElement('div');
     empty.className = 'empty-hint';
     empty.textContent = state.listFilter ? 'No matches.' : 'Nothing here yet. Load a GPX file or add a POI.';
@@ -409,6 +439,29 @@ function renderList() {
         if (!confirm(`Delete POI "${p.name}"?`)) return;
         await poimod.deletePoi(p.id);
         await loadTripData();
+      },
+    }));
+  }
+
+  for (const d of dayTrips) {
+    const track = state.tracks.find((t) => t.id === d.trackId);
+    let meta = 'route missing';
+    if (track) {
+      const lo = Math.min(d.startIdx, d.endIdx), hi = Math.max(d.startIdx, d.endIdx);
+      const segPoints = track.points.slice(lo, hi + 1);
+      meta = segPoints.length > 1 ? formatDistance(trackStats(segPoints).distance) : `${segPoints.length} pts`;
+    }
+    container.appendChild(listItem({
+      title: d.name,
+      meta,
+      kindLabel: 'Day trip',
+      kindClass: 'poi',
+      onClick: () => openDayTrip(d),
+      onDelete: async () => {
+        if (!confirm(`Delete saved day trip "${d.name}"? (The route itself is untouched.)`)) return;
+        await db.delete('dayTrips', d.id);
+        state.dayTrips = await db.byIndex('dayTrips', 'tripId', state.trip.id);
+        renderList();
       },
     }));
   }
@@ -760,7 +813,7 @@ function wireUi() {
   document.getElementById('btn-add-poi').addEventListener('click', () => setPlacingMode(!state.placingPoi));
   document.getElementById('btn-measure').addEventListener('click', () => setMeasuringMode(!state.measuringSegment));
   document.getElementById('btn-clear-segment').addEventListener('click', clearSegment);
-  document.getElementById('btn-save-segment').addEventListener('click', saveSegmentAsTrack);
+  document.getElementById('btn-save-segment').addEventListener('click', saveDayTrip);
 
   document.getElementById('btn-attach-photos').addEventListener('click', () => document.getElementById('photo-input').click());
   document.getElementById('photo-input').addEventListener('change', (e) => {
