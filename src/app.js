@@ -57,16 +57,6 @@ async function init() {
 
   await tilesmod.ensureBuiltinSources();
 
-  state.trips = await db.all('trips');
-  if (state.trips.length === 0) {
-    const trip = { id: newId(), name: 'Koh Kood', createdAt: Date.now() };
-    await db.put('trips', trip);
-    state.trips = [trip];
-  }
-  const lastTripId = await db.getSetting('currentTripId', state.trips[0].id);
-  state.trip = state.trips.find((t) => t.id === lastTripId) || state.trips[0];
-  await db.setSetting('currentTripId', state.trip.id); // make the fallback stick, not just live in memory
-
   state.map = mapmod.createMap('map');
   state.groups.track = L.layerGroup().addTo(state.map);
   state.groups.waypoints = L.layerGroup().addTo(state.map);
@@ -96,7 +86,7 @@ async function init() {
     }
   });
 
-  await loadTripData();
+  await loadAllData();
   fitToSensibleDefault();
   populateSourceSelect(sources, source.id);
   wireUi();
@@ -252,14 +242,13 @@ async function saveDayTrip() {
 
   await db.put('dayTrips', {
     id: newId(),
-    tripId: state.trip.id,
     trackId: state.activeTrack.id,
     name,
     startIdx: state.segmentStartIdx,
     endIdx: state.segmentEndIdx,
     createdAt: Date.now(),
   });
-  state.dayTrips = await db.byIndex('dayTrips', 'tripId', state.trip.id);
+  state.dayTrips = await db.all('dayTrips');
   renderList();
   toast('Saved for later');
 }
@@ -271,8 +260,7 @@ async function openDayTrip(dt) {
   if (!track) { toast('The original route for this day trip is gone'); return; }
 
   state.activeTrack = track;
-  state.trip.activeTrackId = track.id;
-  await db.put('trips', state.trip);
+  await db.setSetting('activeTrackId', track.id);
   state.gps.setActiveTrack(track.points);
   mapmod.showOnlyTrack(state.groups.track, state.trackLayers, track.id);
 
@@ -286,20 +274,19 @@ async function openDayTrip(dt) {
   togglePanel('list-panel', false);
 }
 
-async function loadTripData() {
-  const tripId = state.trip.id;
-  state.tracks = await db.byIndex('tracks', 'tripId', tripId);
+async function loadAllData() {
+  state.tracks = await db.all('tracks');
   for (const t of state.tracks) {
     t.stats = t.points.length > 1 ? computeProfile(t.points) : null;
   }
-  state.waypoints = await db.byIndex('waypoints', 'tripId', tripId);
-  state.pois = await poimod.poisForTrip(tripId);
-  state.dayTrips = await db.byIndex('dayTrips', 'tripId', tripId);
+  state.waypoints = await db.all('waypoints');
+  state.pois = await poimod.getAllPois();
+  state.dayTrips = await db.all('dayTrips');
 
   // Only ever locked by an explicit action (tapping a track). Never
   // auto-selected just because it's the only one - import is storage, not
   // selection, full stop.
-  const lockedId = state.trip.activeTrackId;
+  const lockedId = await db.getSetting('activeTrackId', null);
   const stillExists = lockedId && state.tracks.some((t) => t.id === lockedId);
   state.activeTrack = stillExists ? state.tracks.find((t) => t.id === lockedId) : null;
 
@@ -334,8 +321,7 @@ function fitToTrack(track) {
 
 async function setActiveTrack(track) {
   state.activeTrack = track;
-  state.trip.activeTrackId = track ? track.id : null;
-  await db.put('trips', state.trip);
+  await db.setSetting('activeTrackId', track ? track.id : null);
   if (track) {
     track.lastWalkedAt = Date.now();
     const { stats, ...toSave } = track; // stats is a derived/cached field, don't persist it
@@ -348,8 +334,7 @@ async function setActiveTrack(track) {
 
 async function unlockTrack() {
   state.activeTrack = null;
-  state.trip.activeTrackId = null;
-  await db.put('trips', state.trip);
+  await db.setSetting('activeTrackId', null);
   state.gps.setActiveTrack(null);
   mapmod.applyViewportVisibility(state.map, state.groups.track, state.trackLayers);
   clearSegment();
@@ -412,7 +397,7 @@ function renderList() {
       onDelete: async () => {
         if (!confirm(`Delete track "${t.name}"?`)) return;
         await db.delete('tracks', t.id);
-        await loadTripData();
+        await loadAllData();
       },
     }));
   }
@@ -426,7 +411,7 @@ function renderList() {
       onDelete: async () => {
         if (!confirm(`Delete waypoint "${w.name}"?`)) return;
         await db.delete('waypoints', w.id);
-        await loadTripData();
+        await loadAllData();
       },
     }));
   }
@@ -441,7 +426,7 @@ function renderList() {
       onDelete: async () => {
         if (!confirm(`Delete POI "${p.name}"?`)) return;
         await poimod.deletePoi(p.id);
-        await loadTripData();
+        await loadAllData();
       },
     }));
   }
@@ -463,7 +448,7 @@ function renderList() {
       onDelete: async () => {
         if (!confirm(`Delete saved day trip "${d.name}"? (The route itself is untouched.)`)) return;
         await db.delete('dayTrips', d.id);
-        state.dayTrips = await db.byIndex('dayTrips', 'tripId', state.trip.id);
+        state.dayTrips = await db.all('dayTrips');
         renderList();
       },
     }));
@@ -504,7 +489,7 @@ function renderTrackSelectPanel() {
       onDelete: async () => {
         if (!confirm(`Delete track "${t.name}"?`)) return;
         await db.delete('tracks', t.id);
-        await loadTripData();
+        await loadAllData();
         renderTrackSelectPanel();
       },
     }));
@@ -682,7 +667,7 @@ async function openPoiView(poi) {
     await poimod.deletePoi(poi.id);
     dlg.close();
     cleanup();
-    await loadTripData();
+    await loadAllData();
   }
   function onClose() { dlg.close(); cleanup(); }
   delBtn.addEventListener('click', onDelete);
@@ -726,9 +711,9 @@ async function toggleRecording() {
     if (points.length > 1) {
       const defaultName = `Recorded ${new Date().toLocaleDateString()}`;
       const name = (await promptDialog('Track name', defaultName)) || defaultName;
-      await db.put('tracks', { id: newId(), tripId: state.trip.id, name, points, createdAt: Date.now() });
+      await db.put('tracks', { id: newId(), name, points, createdAt: Date.now() });
       toast('Track saved');
-      await loadTripData();
+      await loadAllData();
     } else {
       toast('Recording too short, discarded');
     }
@@ -754,7 +739,7 @@ function wireUi() {
       ...state.pois.map((p) => ({ name: p.name, lat: p.lat, lon: p.lon, notes: p.notes })),
     ];
     const gpxString = buildGpx({ tracks: state.tracks, waypoints });
-    downloadGpxFile(state.trip.name, gpxString);
+    downloadGpxFile(`luxtrail-export-${new Date().toISOString().slice(0, 10)}`, gpxString);
     toast('GPX exported');
   });
 
@@ -762,10 +747,11 @@ function wireUi() {
     if (!state.tracks.length && !state.pois.length && !state.waypoints.length) { toast('Nothing to export'); return; }
     toast('Building export…');
     try {
-      const zipBytes = await buildTripZip(state.trip, state.tracks, state.waypoints, state.pois, (done, total) => {
+      const exportMeta = { name: `luxtrail-export-${new Date().toISOString().slice(0, 10)}` };
+      const zipBytes = await buildTripZip(exportMeta, state.tracks, state.waypoints, state.pois, (done, total) => {
         if (total) toast(`Packing photos: ${done} / ${total}`);
       });
-      downloadZipFile(state.trip.name + '-viewer', zipBytes);
+      downloadZipFile(exportMeta.name + '-viewer', zipBytes);
       toast('Saved — unzip and open index.html at home, no app needed');
     } catch (err) {
       toast('Export failed: ' + err.message);
@@ -999,7 +985,6 @@ async function savePoiFromDialog() {
   const notes = document.getElementById('poi-notes').value.trim();
 
   await poimod.createPoi({
-    tripId: state.trip.id,
     name, category, notes,
     lat: state.pendingPoiLatLng.lat, lon: state.pendingPoiLatLng.lon,
     photoFiles: state.pendingPhotoFiles,
@@ -1008,7 +993,7 @@ async function savePoiFromDialog() {
   state.pendingPoiLatLng = null;
   document.getElementById('poi-dialog').close();
   toast('POI saved');
-  await loadTripData();
+  await loadAllData();
 }
 
 // Parses and stores one file's tracks/waypoints. No trip reload, no map
@@ -1018,10 +1003,10 @@ async function importGpxFile(file) {
   const text = await file.text();
   const { tracks, waypoints } = parseGpx(text);
   for (const t of tracks) {
-    await db.put('tracks', { id: newId(), tripId: state.trip.id, name: t.name, points: t.points, createdAt: Date.now() });
+    await db.put('tracks', { id: newId(), name: t.name, points: t.points, createdAt: Date.now() });
   }
   for (const w of waypoints) {
-    await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
+    await db.put('waypoints', { id: newId(), name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
   }
   return { trackCount: tracks.length, waypointCount: waypoints.length };
 }
@@ -1050,7 +1035,7 @@ async function handleGpxFiles(files) {
   // currently shown (locked track, or the current view) stays exactly as
   // it was. The new tracks just become available in the list until you
   // deliberately pick one to walk.
-  await loadTripData();
+  await loadAllData();
 }
 
 init();

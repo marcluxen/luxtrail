@@ -1,6 +1,6 @@
 import { db, newId } from './db.js';
 
-export async function createPoi({ tripId, name, category, notes, lat, lon, photoFiles }) {
+export async function createPoi({ name, category, notes, lat, lon, photoFiles }) {
   const photos = [];
   if (photoFiles && photoFiles.length) {
     for (const file of photoFiles) {
@@ -10,7 +10,6 @@ export async function createPoi({ tripId, name, category, notes, lat, lon, photo
   }
   const poi = {
     id: newId(),
-    tripId,
     name,
     category,
     notes: notes || '',
@@ -26,8 +25,8 @@ export async function deletePoi(id) {
   await db.delete('pois', id);
 }
 
-export async function poisForTrip(tripId) {
-  return db.byIndex('pois', 'tripId', tripId);
+export async function getAllPois() {
+  return db.all('pois');
 }
 
 // A page you glance at doesn't need more than this - 800px is sharp at
