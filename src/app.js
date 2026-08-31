@@ -711,8 +711,9 @@ async function toggleRecording() {
 function wireUi() {
   document.getElementById('btn-load').addEventListener('click', () => document.getElementById('file-input').click());
   document.getElementById('file-input').addEventListener('change', async (e) => {
-    for (const file of e.target.files) await handleGpxFile(file);
+    const files = Array.from(e.target.files);
     e.target.value = '';
+    if (files.length) await handleGpxFiles(files);
   });
 
   document.getElementById('btn-list').addEventListener('click', () => togglePanel('list-panel'));
@@ -1001,44 +1002,63 @@ async function savePoiFromDialog() {
   await loadTripData();
 }
 
-async function handleGpxFile(file) {
-  try {
-    const text = await file.text();
-    const { tracks, waypoints } = parseGpx(text);
-    if (!tracks.length && !waypoints.length) {
-      toast('No tracks or waypoints found in file');
-      return;
-    }
-    const newTrackIds = [];
-    for (const t of tracks) {
-      const id = newId();
-      newTrackIds.push(id);
-      await db.put('tracks', { id, tripId: state.trip.id, name: t.name, points: t.points });
-    }
-    for (const w of waypoints) {
-      await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
-    }
-    toast(`Loaded ${tracks.length} track(s), ${waypoints.length} waypoint(s)`);
+// Parses and stores one file's tracks/waypoints. No trip reload, no map
+// movement - that happens once for the whole batch in handleGpxFiles, so
+// selecting several files doesn't reload/rezoom once per file.
+async function importGpxFile(file) {
+  const text = await file.text();
+  const { tracks, waypoints } = parseGpx(text);
+  const newTrackIds = [];
+  for (const t of tracks) {
+    const id = newId();
+    newTrackIds.push(id);
+    await db.put('tracks', { id, tripId: state.trip.id, name: t.name, points: t.points });
+  }
+  for (const w of waypoints) {
+    await db.put('waypoints', { id: newId(), tripId: state.trip.id, name: w.name, lat: w.lat, lon: w.lon, ele: w.ele });
+  }
+  return { trackCount: tracks.length, waypointCount: waypoints.length, newTrackIds };
+}
 
-    // Importing always shows you what you just loaded: drop any locked
-    // track and move the map to the new one(s), rather than silently
-    // staying zoomed on unrelated older data with the new route off-screen.
-    if (newTrackIds.length) {
-      state.trip.activeTrackId = null;
-      await db.put('trips', state.trip);
+async function handleGpxFiles(files) {
+  let totalTracks = 0, totalWaypoints = 0, failed = 0;
+  const allNewTrackIds = [];
+
+  for (const file of files) {
+    try {
+      const result = await importGpxFile(file);
+      totalTracks += result.trackCount;
+      totalWaypoints += result.waypointCount;
+      allNewTrackIds.push(...result.newTrackIds);
+    } catch (err) {
+      failed++;
     }
-    await loadTripData();
-    if (newTrackIds.length) {
-      const newLatLngs = newTrackIds
-        .map((id) => state.tracks.find((t) => t.id === id))
-        .filter(Boolean)
-        .flatMap((t) => t.points.map((p) => [p.lat, p.lon]));
-      if (newLatLngs.length) state.map.fitBounds(newLatLngs, { padding: [30, 30] });
-    } else {
-      fitToSensibleDefault();
-    }
-  } catch (err) {
-    toast('Failed to load GPX: ' + err.message);
+  }
+
+  if (totalTracks === 0 && totalWaypoints === 0) {
+    toast(failed ? `Couldn't read ${failed} file(s)` : 'No tracks or waypoints found');
+    return;
+  }
+
+  toast(`Loaded ${totalTracks} track(s), ${totalWaypoints} waypoint(s)` + (failed ? ` — ${failed} file(s) failed` : ''));
+
+  // Importing always shows you what you just loaded: drop any locked track
+  // and move the map to cover everything just imported together, rather
+  // than silently staying zoomed on old data or jumping to only the last file.
+  if (allNewTrackIds.length) {
+    state.trip.activeTrackId = null;
+    await db.put('trips', state.trip);
+  }
+  await loadTripData();
+
+  if (allNewTrackIds.length) {
+    const newLatLngs = allNewTrackIds
+      .map((id) => state.tracks.find((t) => t.id === id))
+      .filter(Boolean)
+      .flatMap((t) => t.points.map((p) => [p.lat, p.lon]));
+    if (newLatLngs.length) state.map.fitBounds(newLatLngs, { padding: [30, 30] });
+  } else {
+    fitToSensibleDefault();
   }
 }
 
