@@ -22,25 +22,12 @@ export async function createPoi({ tripId, name, category, notes, lat, lon, photo
   return poi;
 }
 
-export async function updatePoi(poi) {
-  await db.put('pois', poi);
-}
-
 export async function deletePoi(id) {
   await db.delete('pois', id);
 }
 
 export async function poisForTrip(tripId) {
   return db.byIndex('pois', 'tripId', tripId);
-}
-
-export async function addPhotosToPoi(poi, photoFiles) {
-  for (const file of photoFiles) {
-    const blob = await compressImage(file);
-    poi.photos.push({ blob, name: file.name || 'photo.jpg' });
-  }
-  await db.put('pois', poi);
-  return poi;
 }
 
 // A page you glance at doesn't need more than this - 800px is sharp at

@@ -40,17 +40,6 @@ export function distanceToSegment(p, a, b) {
   return Math.hypot(px - cx, py - cy);
 }
 
-export function distanceToTrack(p, points) {
-  if (!points || points.length === 0) return Infinity;
-  if (points.length === 1) return haversine(p.lat, p.lon, points[0].lat, points[0].lon);
-  let min = Infinity;
-  for (let i = 0; i < points.length - 1; i++) {
-    const d = distanceToSegment(p, points[i], points[i + 1]);
-    if (d < min) min = d;
-  }
-  return min;
-}
-
 // Searches only segments near a known index instead of the whole track -
 // O(window) instead of O(n), which matters once a track has tens of
 // thousands of points (a multi-day route) and this runs on every GPS fix.
